@@ -21,8 +21,14 @@ contextBridge.exposeInMainWorld('pi', {
     exists: (path: string) => ipcRenderer.invoke('fs:exists', path),
   },
 
+  pkg: {
+    install: (pkgId: string) => ipcRenderer.invoke('pi:pkgExec', 'install', pkgId),
+    uninstall: (pkgId: string) => ipcRenderer.invoke('pi:pkgExec', 'uninstall', pkgId),
+  },
+
   app: {
     getVersion: () => ipcRenderer.invoke('app:version'),
+    getCwd: () => ipcRenderer.invoke('app:cwd'),
     quit: () => ipcRenderer.invoke('app:quit'),
   },
 

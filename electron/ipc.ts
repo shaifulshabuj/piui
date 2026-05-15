@@ -2,10 +2,13 @@ import { ipcMain, app } from 'electron'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import * as os from 'os'
+import { spawn } from 'child_process'
 import { piManager } from './piProcess'
 
+const PI_HOME = path.join(os.homedir(), '.pi')
+
 const ALLOWED_ROOTS = [
-  path.join(os.homedir(), '.pi'),
+  PI_HOME,
   path.join(os.homedir(), '.config', 'pi'),
   process.cwd(),
 ]
@@ -15,6 +18,12 @@ function isPathAllowed(filePath: string): boolean {
   return ALLOWED_ROOTS.some(
     (root) => resolved === root || resolved.startsWith(root + path.sep)
   )
+}
+
+/** Resolve a relative path against ~/.pi */
+function resolvePiPath(relOrAbs: string): string {
+  if (path.isAbsolute(relOrAbs)) return relOrAbs
+  return path.join(PI_HOME, relOrAbs)
 }
 
 export function registerIpcHandlers() {
@@ -29,32 +38,61 @@ export function registerIpcHandlers() {
 
   // Filesystem — scoped to ~/.pi and project dir only
   ipcMain.handle('fs:readFile', async (_, filePath: string) => {
-    if (!isPathAllowed(filePath)) throw new Error(`Access denied: ${filePath}`)
-    return fs.readFile(path.resolve(filePath), 'utf8')
+    const resolved = resolvePiPath(filePath)
+    if (!isPathAllowed(resolved)) throw new Error(`Access denied: ${filePath}`)
+    return fs.readFile(resolved, 'utf8')
   })
 
   ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string) => {
-    if (!isPathAllowed(filePath)) throw new Error(`Access denied: ${filePath}`)
-    await fs.writeFile(path.resolve(filePath), content, 'utf8')
+    const resolved = resolvePiPath(filePath)
+    if (!isPathAllowed(resolved)) throw new Error(`Access denied: ${filePath}`)
+    await fs.mkdir(path.dirname(resolved), { recursive: true })
+    await fs.writeFile(resolved, content, 'utf8')
   })
 
   ipcMain.handle('fs:listDir', async (_, dirPath: string) => {
-    if (!isPathAllowed(dirPath)) throw new Error(`Access denied: ${dirPath}`)
-    const entries = await fs.readdir(path.resolve(dirPath), { withFileTypes: true })
-    return entries.map((e) => ({ name: e.name, isDir: e.isDirectory() }))
+    const resolved = resolvePiPath(dirPath)
+    if (!isPathAllowed(resolved)) throw new Error(`Access denied: ${dirPath}`)
+    try {
+      const entries = await fs.readdir(resolved, { withFileTypes: true })
+      return entries.map((e) => ({ name: e.name, isDir: e.isDirectory() }))
+    } catch {
+      return []
+    }
   })
 
   ipcMain.handle('fs:exists', async (_, filePath: string) => {
-    if (!isPathAllowed(filePath)) return false
+    const resolved = resolvePiPath(filePath)
+    if (!isPathAllowed(resolved)) return false
     try {
-      await fs.access(path.resolve(filePath))
+      await fs.access(resolved)
       return true
     } catch {
       return false
     }
   })
 
+  // pi package management — spawn `pi install <pkg>` or `pi uninstall <pkg>`
+  ipcMain.handle('pi:pkgExec', async (_, subCmd: 'install' | 'uninstall', pkgId: string) => {
+    if (!pkgId.match(/^[a-zA-Z0-9@/._:-]{1,200}$/)) throw new Error('Invalid package id')
+    return new Promise<string>((resolve, reject) => {
+      const proc = spawn(piManager.getBinaryPath() ?? 'pi', [subCmd, pkgId], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env },
+      })
+      let out = ''
+      proc.stdout?.on('data', (d: Buffer) => { out += d.toString() })
+      proc.stderr?.on('data', (d: Buffer) => { out += d.toString() })
+      proc.on('close', (code) => {
+        if (code === 0) resolve(out.trim())
+        else reject(new Error(out.trim() || `pi ${subCmd} exited ${code}`))
+      })
+      proc.on('error', reject)
+    })
+  })
+
   // App
   ipcMain.handle('app:version', async () => app.getVersion())
+  ipcMain.handle('app:cwd', async () => process.cwd())
   ipcMain.handle('app:quit', async () => app.quit())
 }

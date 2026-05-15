@@ -15,8 +15,13 @@ electron.contextBridge.exposeInMainWorld("pi", {
 		listDir: (path) => electron.ipcRenderer.invoke("fs:listDir", path),
 		exists: (path) => electron.ipcRenderer.invoke("fs:exists", path)
 	},
+	pkg: {
+		install: (pkgId) => electron.ipcRenderer.invoke("pi:pkgExec", "install", pkgId),
+		uninstall: (pkgId) => electron.ipcRenderer.invoke("pi:pkgExec", "uninstall", pkgId)
+	},
 	app: {
 		getVersion: () => electron.ipcRenderer.invoke("app:version"),
+		getCwd: () => electron.ipcRenderer.invoke("app:cwd"),
 		quit: () => electron.ipcRenderer.invoke("app:quit")
 	},
 	onNavigate: (cb) => {

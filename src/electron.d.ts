@@ -15,8 +15,13 @@ interface PiAPI {
     listDir: (path: string) => Promise<Array<{ name: string; isDir: boolean }>>
     exists: (path: string) => Promise<boolean>
   }
+  pkg: {
+    install: (pkgId: string) => Promise<string>
+    uninstall: (pkgId: string) => Promise<string>
+  }
   app: {
     getVersion: () => Promise<string>
+    getCwd: () => Promise<string>
     quit: () => Promise<void>
   }
   onNavigate: (cb: (screen: string) => void) => () => void

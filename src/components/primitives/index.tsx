@@ -79,10 +79,11 @@ interface BtnProps {
   kbd?: string;
   style?: React.CSSProperties;
   full?: boolean;
+  disabled?: boolean;
   onClick?: () => void;
 }
 
-export function Btn({ children, variant = 'ghost', icon, kbd, style = {}, full, onClick }: BtnProps) {
+export function Btn({ children, variant = 'ghost', icon, kbd, style = {}, full, disabled, onClick }: BtnProps) {
   const variants = {
     primary:   { bg: T.pi, color: '#1a1408', border: T.pi },
     secondary: { bg: T.bgElev, color: T.text, border: T.border },
@@ -94,13 +95,15 @@ export function Btn({ children, variant = 'ghost', icon, kbd, style = {}, full, 
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 7,
         padding: '6px 11px', borderRadius: 5,
-        background: v.bg, color: v.color,
+        background: v.bg, color: disabled ? T.textFaint : v.color,
         border: `1px solid ${v.border}`,
         fontFamily: F.mono, fontSize: 11.5, fontWeight: 500,
-        cursor: 'pointer', whiteSpace: 'nowrap',
+        cursor: disabled ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
+        opacity: disabled ? 0.5 : 1,
         width: full ? '100%' : 'auto',
         justifyContent: full ? 'flex-start' : 'center',
         ...style,

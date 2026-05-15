@@ -1,6 +1,9 @@
+import { useEffect } from 'react';
 import { T, F } from '../../tokens';
 import { Pi, Dot, NavItem, SectionLabel, Btn } from '../primitives';
 import { useNav } from '../../context/NavContext';
+import { useSessionStore } from '../../store/sessionStore';
+import type { Session } from '../../types';
 
 export function PiTitlebar({ title }: { title?: string }) {
   const isElectron = !!window.pi?.isElectron;
@@ -98,6 +101,16 @@ export function PiWindow({ title, children, statusbar }: PiWindowProps) {
 
 export function SidebarMain() {
   const { screen, navigate, openOverlay } = useNav();
+  const { sessions, currentSessionId, loadSessions, setCurrentSession } = useSessionStore();
+
+  useEffect(() => { loadSessions() }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const groups: { label: string; key: Session['group'] }[] = [
+    { label: 'Today', key: 'today' },
+    { label: 'Yesterday', key: 'yesterday' },
+    { label: 'Last week', key: 'last-week' },
+  ];
+
   return (
     <div style={{
       width: 240, flexShrink: 0, background: T.bgPanel,
@@ -112,20 +125,25 @@ export function SidebarMain() {
         </Btn>
       </div>
 
-      <SectionLabel>Today</SectionLabel>
-      <NavItem icon="●" label="pi ui design system" active={screen === 'chat'}
-        onClick={() => navigate('chat')} />
-      <NavItem icon="○" label="refactor session store" onClick={() => navigate('chat')} />
-      <NavItem icon="○" label="debug auth race" onClick={() => navigate('chat')} />
-
-      <SectionLabel>Yesterday</SectionLabel>
-      <NavItem icon="○" label="rpc protocol notes" dim onClick={() => navigate('chat')} />
-      <NavItem icon="○" label="theme: solarized port" dim onClick={() => navigate('chat')} />
-      <NavItem icon="○" label="benchmark gpt-5 vs sonnet" dim onClick={() => navigate('chat')} />
-
-      <SectionLabel>Last week</SectionLabel>
-      <NavItem icon="○" label="onboarding copy" dim onClick={() => navigate('chat')} />
-      <NavItem icon="○" label="package: pi-doom review" dim onClick={() => navigate('chat')} />
+      {groups.map(({ label, key }) => {
+        const group = sessions.filter((s) => s.group === key);
+        if (!group.length) return null;
+        return (
+          <div key={key}>
+            <SectionLabel>{label}</SectionLabel>
+            {group.map((s) => (
+              <NavItem
+                key={s.id}
+                icon={s.active ? '●' : '○'}
+                label={s.title}
+                active={s.id === currentSessionId && screen === 'chat'}
+                dim={s.dim}
+                onClick={() => { setCurrentSession(s.id); navigate('chat'); }}
+              />
+            ))}
+          </div>
+        );
+      })}
 
       <div style={{ flex: 1 }} />
 

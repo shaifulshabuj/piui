@@ -135,6 +135,10 @@ export class PiProcessManager {
     return this.available && !!this.proc
   }
 
+  getBinaryPath(): string | null {
+    return this.binaryPath
+  }
+
   getStatus() {
     return {
       available: this.available,

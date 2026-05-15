@@ -1,21 +1,22 @@
+import { useEffect } from 'react';
 import { T, F } from '../tokens';
 import { Pill, Btn, Dot } from '../components/primitives';
 import { PiWindow, SidebarMain } from '../components/shell';
 import { useNav } from '../context/NavContext';
+import { usePackageStore, type Package } from '../store/packageStore';
 
-function PackageCard({ name, author, kind, summary, installed, version, downloads, featured, mark }: {
-  name: string; author: string; kind: string; summary: string;
-  installed?: boolean; version: string; downloads: string; featured?: boolean; mark: string;
+function PackageCard({ pkg, onInstall, onUninstall, busy }: {
+  pkg: Package; onInstall: () => void; onUninstall: () => void; busy: boolean;
 }) {
   const kindColor: Record<string, string> = {
     extension: T.tool, skill: T.info, prompt: T.warn, theme: T.pi, bundle: T.ok,
   };
-  const c = kindColor[kind] || T.textDim;
+  const c = kindColor[pkg.kind] || T.textDim;
   return (
     <div style={{
       padding: '14px 16px', borderRadius: 6,
-      border: `1px solid ${featured ? T.piBorder : T.border}`,
-      background: featured ? T.piBg : T.bgPanel,
+      border: `1px solid ${pkg.featured ? T.piBorder : T.border}`,
+      background: pkg.featured ? T.piBg : T.bgPanel,
       display: 'flex', flexDirection: 'column', gap: 8,
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
@@ -24,26 +25,33 @@ function PackageCard({ name, author, kind, summary, installed, version, download
           background: T.bgElev, border: `1px solid ${T.border}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontFamily: F.mono, fontSize: 16, color: c, fontWeight: 600,
-        }}>{mark}</div>
+        }}>{pkg.mark}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
-            <span style={{ fontFamily: F.mono, fontSize: 13, color: T.text, fontWeight: 500 }}>{name}</span>
-            <span style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textMuted }}>v{version}</span>
+            <span style={{ fontFamily: F.mono, fontSize: 13, color: T.text, fontWeight: 500 }}>{pkg.name}</span>
+            <span style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textMuted }}>v{pkg.version}</span>
           </div>
-          <div style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textMuted, marginTop: 2 }}>by {author}</div>
+          <div style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textMuted, marginTop: 2 }}>by {pkg.author}</div>
         </div>
-        <Pill color={c} bg={`${c}15`} border={`${c}40`}>{kind}</Pill>
+        <Pill color={c} bg={`${c}15`} border={`${c}40`}>{pkg.kind}</Pill>
       </div>
-      <div style={{ fontFamily: F.sans, fontSize: 12.5, color: T.textDim, lineHeight: 1.5 }}>{summary}</div>
+      <div style={{ fontFamily: F.sans, fontSize: 12.5, color: T.textDim, lineHeight: 1.5 }}>{pkg.summary}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 4, borderTop: `1px solid ${T.borderDim}` }}>
-        <span style={{ fontFamily: F.mono, fontSize: 10, color: T.textFaint }}>⇣ {downloads}</span>
+        <span style={{ fontFamily: F.mono, fontSize: 10, color: T.textFaint }}>⇣ {pkg.downloads}</span>
         <div style={{ flex: 1 }} />
-        {installed ? (
-          <Pill color={T.ok} bg={T.okBg} border="rgba(143,184,106,0.3)">
-            <Dot color={T.ok} size={5} /> installed
-          </Pill>
+        {pkg.installed ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Pill color={T.ok} bg={T.okBg} border="rgba(143,184,106,0.3)">
+              <Dot color={T.ok} size={5} /> installed
+            </Pill>
+            <Btn variant="ghost" onClick={onUninstall} disabled={busy}>
+              {busy ? '…' : 'remove'}
+            </Btn>
+          </div>
         ) : (
-          <Btn variant="outline">install</Btn>
+          <Btn variant="outline" onClick={onInstall} disabled={busy}>
+            {busy ? 'installing…' : 'install'}
+          </Btn>
         )}
       </div>
     </div>
@@ -52,6 +60,13 @@ function PackageCard({ name, author, kind, summary, installed, version, download
 
 export function Packages() {
   const { navigate } = useNav();
+  const { packages, installing, loadPackages, install, uninstall } = usePackageStore();
+
+  useEffect(() => { loadPackages() }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const installed = packages.filter((p) => p.installed);
+  const featured = packages.filter((p) => p.featured && !p.installed);
+  const all = packages.filter((p) => !p.installed);
   return (
     <PiWindow title="pi · packages">
       <SidebarMain />
@@ -67,7 +82,7 @@ export function Packages() {
             <Btn variant="secondary" icon="✎">Publish</Btn>
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
-            {([['installed', '8', true], ['discover', '127'], ['extensions', '52'], ['skills', '38'], ['prompts', '24'], ['themes', '13']] as [string, string, boolean?][]).map(([k, c, a]) => (
+            {([['installed', String(installed.length), true], ['discover', String(all.length)], ['extensions', '52'], ['skills', '38'], ['prompts', '24'], ['themes', '13']] as [string, string, boolean?][]).map(([k, c, a]) => (
               <div key={k} onClick={() => k === 'themes' ? navigate('theme') : undefined} style={{
                 padding: '6px 12px', borderRadius: 5,
                 fontFamily: F.mono, fontSize: 11.5,
@@ -92,29 +107,35 @@ export function Packages() {
         </div>
 
         <div style={{ flex: 1, overflow: 'auto', padding: '18px 24px', background: T.bg }}>
-          <div style={{ fontFamily: F.mono, fontSize: 10, color: T.textFaint, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>installed · 8</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 22 }}>
-            <PackageCard name="@termdraw/pi" author="benvinegar" kind="extension" mark="✎" version="1.4.2" downloads="4.1k" installed
-              summary="Draw inside the terminal — sketch flow diagrams, sketches, and ASCII art with mouse + tablet input." />
-            <PackageCard name="@earendil/plan-mode" author="earendil" kind="extension" mark="◐" version="2.0.1" downloads="18.4k" installed featured
-              summary="Adds /plan command — pi writes a plan, you approve, it executes. Pauses between phases for review." />
-            <PackageCard name="claude-warm" author="mariozechner" kind="theme" mark="❒" version="0.6.0" downloads="2.7k" installed
-              summary="Warm amber palette with off-black surfaces. Designed to look good in dim rooms." />
-            <PackageCard name="rust-engineer" author="badlogic" kind="skill" mark="◧" version="1.0.4" downloads="3.2k" installed
-              summary="Rust-specific debugging skill: knows cargo, miri, criterion. Loaded on demand when working in Rust projects." />
-          </div>
+          {installed.length > 0 && (
+            <>
+              <div style={{ fontFamily: F.mono, fontSize: 10, color: T.textFaint, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>
+                installed · {installed.length}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 22 }}>
+                {installed.map((p) => (
+                  <PackageCard key={p.id} pkg={p}
+                    busy={installing.has(p.id)}
+                    onInstall={() => install(p.id)}
+                    onUninstall={() => uninstall(p.id)} />
+                ))}
+              </div>
+            </>
+          )}
 
-          <div style={{ fontFamily: F.mono, fontSize: 10, color: T.textFaint, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>featured this week</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 22 }}>
-            <PackageCard name="pi-doom" author="badlogic" kind="bundle" mark="◉" version="0.3.1" downloads="11.8k" featured
-              summary="DOOM, but pi plays it. Bundle of an extension that pipes frames through the TUI plus a skill that teaches pi WAD strategy." />
-            <PackageCard name="@oss/sub-agents" author="oss" kind="extension" mark="◯" version="1.2.0" downloads="9.3k"
-              summary="Spawn child pi instances from a tool call. Each runs in its own session tree, results stream back to the parent." />
-            <PackageCard name="commit-and-push" author="mariozechner" kind="prompt" mark="❖" version="0.4.0" downloads="6.1k"
-              summary="The /commit prompt — generates conventional commits from your staged diff with optional emoji, scopes, and ticket refs." />
-            <PackageCard name="permission-gate" author="earendil" kind="extension" mark="🔒" version="1.1.0" downloads="5.7k"
-              summary="Confirm-before-execute popup for dangerous tools. Allow-list paths, command prefixes, and tool names." />
-          </div>
+          {featured.length > 0 && (
+            <>
+              <div style={{ fontFamily: F.mono, fontSize: 10, color: T.textFaint, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>featured this week</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 22 }}>
+                {featured.map((p) => (
+                  <PackageCard key={p.id} pkg={p}
+                    busy={installing.has(p.id)}
+                    onInstall={() => install(p.id)}
+                    onUninstall={() => uninstall(p.id)} />
+                ))}
+              </div>
+            </>
+          )}
 
           <div style={{ fontFamily: F.mono, fontSize: 10, color: T.textFaint, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>install from anywhere</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

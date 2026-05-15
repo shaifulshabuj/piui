@@ -32,8 +32,8 @@ export const useSessionStore = create<SessionState>((set) => ({
   loadSessions: async () => {
     if (!window.pi?.fs) return
     try {
-      const piDir = `${window.location.href.startsWith('file') ? '' : '~'}/.pi/sessions`
-      const entries = await window.pi.fs.listDir(piDir)
+      // Relative paths resolve to ~/.pi/<path> via IPC resolvePiPath
+      const entries = await window.pi.fs.listDir('sessions')
       const sessions: Session[] = entries
         .filter((e) => !e.isDir && e.name.endsWith('.json'))
         .map((e, i) => ({

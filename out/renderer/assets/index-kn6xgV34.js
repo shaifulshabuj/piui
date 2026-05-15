@@ -10440,7 +10440,7 @@ function Dot({ color = T.ok, size = 6, animated = false, style = {} }) {
 		...style
 	} });
 }
-function Btn({ children, variant = "ghost", icon, kbd, style = {}, full, onClick }) {
+function Btn({ children, variant = "ghost", icon, kbd, style = {}, full, disabled, onClick }) {
 	const v = {
 		primary: {
 			bg: T.pi,
@@ -10470,6 +10470,7 @@ function Btn({ children, variant = "ghost", icon, kbd, style = {}, full, onClick
 	}[variant];
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 		onClick,
+		disabled,
 		style: {
 			display: "inline-flex",
 			alignItems: "center",
@@ -10477,13 +10478,14 @@ function Btn({ children, variant = "ghost", icon, kbd, style = {}, full, onClick
 			padding: "6px 11px",
 			borderRadius: 5,
 			background: v.bg,
-			color: v.color,
+			color: disabled ? T.textFaint : v.color,
 			border: `1px solid ${v.border}`,
 			fontFamily: F.mono,
 			fontSize: 11.5,
 			fontWeight: 500,
-			cursor: "pointer",
+			cursor: disabled ? "not-allowed" : "pointer",
 			whiteSpace: "nowrap",
+			opacity: disabled ? .5 : 1,
 			width: full ? "100%" : "auto",
 			justifyContent: full ? "flex-start" : "center",
 			...style
@@ -10572,6 +10574,79 @@ function SectionLabel({ children, style = {} }) {
 		children
 	});
 }
+//#endregion
+//#region src/store/sessionStore.ts
+var MOCK_SESSIONS = [
+	{
+		id: "s1",
+		title: "pi ui design system",
+		active: true,
+		group: "today"
+	},
+	{
+		id: "s2",
+		title: "refactor session store",
+		group: "today"
+	},
+	{
+		id: "s3",
+		title: "debug auth race",
+		group: "today"
+	},
+	{
+		id: "s4",
+		title: "rpc protocol notes",
+		dim: true,
+		group: "yesterday"
+	},
+	{
+		id: "s5",
+		title: "theme: solarized port",
+		dim: true,
+		group: "yesterday"
+	},
+	{
+		id: "s6",
+		title: "benchmark gpt-5 vs sonnet",
+		dim: true,
+		group: "yesterday"
+	},
+	{
+		id: "s7",
+		title: "onboarding copy",
+		dim: true,
+		group: "last-week"
+	},
+	{
+		id: "s8",
+		title: "package: pi-doom review",
+		dim: true,
+		group: "last-week"
+	}
+];
+function guessGroup(index) {
+	if (index < 3) return "today";
+	if (index < 6) return "yesterday";
+	return "last-week";
+}
+var useSessionStore = create((set) => ({
+	sessions: MOCK_SESSIONS,
+	currentSessionId: "s1",
+	loadSessions: async () => {
+		if (!window.pi?.fs) return;
+		try {
+			const sessions = (await window.pi.fs.listDir("sessions")).filter((e) => !e.isDir && e.name.endsWith(".json")).map((e, i) => ({
+				id: e.name.replace(".json", ""),
+				title: e.name.replace(".json", "").replace(/-/g, " "),
+				group: guessGroup(i)
+			}));
+			if (sessions.length > 0) set({ sessions });
+		} catch {}
+	},
+	setCurrentSession: (id) => {
+		set({ currentSessionId: id });
+	}
+}));
 //#endregion
 //#region src/components/shell/index.tsx
 function PiTitlebar({ title }) {
@@ -10712,6 +10787,10 @@ function PiWindow({ title, children, statusbar }) {
 }
 function SidebarMain() {
 	const { screen, navigate, openOverlay } = useNav();
+	const { sessions, currentSessionId, loadSessions, setCurrentSession } = useSessionStore();
+	(0, import_react.useEffect)(() => {
+		loadSessions();
+	}, []);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		style: {
 			width: 240,
@@ -10741,54 +10820,32 @@ function SidebarMain() {
 					children: "New session"
 				})
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionLabel, { children: "Today" }),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(NavItem, {
-				icon: "●",
-				label: "pi ui design system",
-				active: screen === "chat",
-				onClick: () => navigate("chat")
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(NavItem, {
-				icon: "○",
-				label: "refactor session store",
-				onClick: () => navigate("chat")
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(NavItem, {
-				icon: "○",
-				label: "debug auth race",
-				onClick: () => navigate("chat")
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionLabel, { children: "Yesterday" }),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(NavItem, {
-				icon: "○",
-				label: "rpc protocol notes",
-				dim: true,
-				onClick: () => navigate("chat")
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(NavItem, {
-				icon: "○",
-				label: "theme: solarized port",
-				dim: true,
-				onClick: () => navigate("chat")
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(NavItem, {
-				icon: "○",
-				label: "benchmark gpt-5 vs sonnet",
-				dim: true,
-				onClick: () => navigate("chat")
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionLabel, { children: "Last week" }),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(NavItem, {
-				icon: "○",
-				label: "onboarding copy",
-				dim: true,
-				onClick: () => navigate("chat")
-			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(NavItem, {
-				icon: "○",
-				label: "package: pi-doom review",
-				dim: true,
-				onClick: () => navigate("chat")
+			[
+				{
+					label: "Today",
+					key: "today"
+				},
+				{
+					label: "Yesterday",
+					key: "yesterday"
+				},
+				{
+					label: "Last week",
+					key: "last-week"
+				}
+			].map(({ label, key }) => {
+				const group = sessions.filter((s) => s.group === key);
+				if (!group.length) return null;
+				return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionLabel, { children: label }), group.map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NavItem, {
+					icon: s.active ? "●" : "○",
+					label: s.title,
+					active: s.id === currentSessionId && screen === "chat",
+					dim: s.dim,
+					onClick: () => {
+						setCurrentSession(s.id);
+						navigate("chat");
+					}
+				}, s.id))] }, key);
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 } }),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -12705,21 +12762,163 @@ function ModelPicker() {
 	});
 }
 //#endregion
+//#region src/store/packageStore.ts
+var MOCK_PACKAGES = [
+	{
+		id: "npm:@termdraw/pi",
+		name: "@termdraw/pi",
+		author: "benvinegar",
+		kind: "extension",
+		mark: "✎",
+		version: "1.4.2",
+		downloads: "4.1k",
+		installed: true,
+		summary: "Draw inside the terminal — sketch flow diagrams, sketches, and ASCII art with mouse + tablet input."
+	},
+	{
+		id: "npm:@earendil/plan-mode",
+		name: "@earendil/plan-mode",
+		author: "earendil",
+		kind: "extension",
+		mark: "◐",
+		version: "2.0.1",
+		downloads: "18.4k",
+		installed: true,
+		featured: true,
+		summary: "Adds /plan command — pi writes a plan, you approve, it executes. Pauses between phases for review."
+	},
+	{
+		id: "npm:claude-warm",
+		name: "claude-warm",
+		author: "mariozechner",
+		kind: "theme",
+		mark: "❒",
+		version: "0.6.0",
+		downloads: "2.7k",
+		installed: true,
+		summary: "Warm amber palette with off-black surfaces. Designed to look good in dim rooms."
+	},
+	{
+		id: "npm:rust-engineer",
+		name: "rust-engineer",
+		author: "badlogic",
+		kind: "skill",
+		mark: "◧",
+		version: "1.0.4",
+		downloads: "3.2k",
+		installed: true,
+		summary: "Rust-specific debugging skill: knows cargo, miri, criterion. Loaded on demand when working in Rust projects."
+	},
+	{
+		id: "npm:pi-doom",
+		name: "pi-doom",
+		author: "badlogic",
+		kind: "bundle",
+		mark: "◉",
+		version: "0.3.1",
+		downloads: "11.8k",
+		installed: false,
+		featured: true,
+		summary: "DOOM, but pi plays it. Bundle of an extension that pipes frames through the TUI plus a skill that teaches pi WAD strategy."
+	},
+	{
+		id: "npm:@oss/sub-agents",
+		name: "@oss/sub-agents",
+		author: "oss",
+		kind: "extension",
+		mark: "◯",
+		version: "1.2.0",
+		downloads: "9.3k",
+		installed: false,
+		summary: "Spawn child pi instances from a tool call. Each runs in its own session tree, results stream back to the parent."
+	},
+	{
+		id: "npm:commit-and-push",
+		name: "commit-and-push",
+		author: "mariozechner",
+		kind: "prompt",
+		mark: "❖",
+		version: "0.4.0",
+		downloads: "6.1k",
+		installed: false,
+		summary: "The /commit prompt — generates conventional commits from your staged diff with optional emoji, scopes, and ticket refs."
+	},
+	{
+		id: "npm:permission-gate",
+		name: "permission-gate",
+		author: "earendil",
+		kind: "extension",
+		mark: "🔒",
+		version: "1.1.0",
+		downloads: "5.7k",
+		installed: false,
+		summary: "Confirm-before-execute popup for dangerous tools. Allow-list paths, command prefixes, and tool names."
+	}
+];
+var usePackageStore = create((set) => ({
+	packages: MOCK_PACKAGES,
+	installing: /* @__PURE__ */ new Set(),
+	async loadPackages() {
+		if (!window.pi?.fs) return;
+		try {
+			const entries = await window.pi.fs.listDir("packages");
+			if (!entries.length) return;
+			const installedIds = new Set(entries.map((e) => e.name));
+			set((s) => ({ packages: s.packages.map((p) => ({
+				...p,
+				installed: installedIds.has(p.name) || p.installed
+			})) }));
+		} catch {}
+	},
+	async install(id) {
+		set((s) => ({ installing: new Set([...s.installing, id]) }));
+		try {
+			if (window.pi?.pkg) await window.pi.pkg.install(id);
+			set((s) => ({ packages: s.packages.map((p) => p.id === id ? {
+				...p,
+				installed: true
+			} : p) }));
+		} finally {
+			set((s) => {
+				const next = new Set(s.installing);
+				next.delete(id);
+				return { installing: next };
+			});
+		}
+	},
+	async uninstall(id) {
+		set((s) => ({ installing: new Set([...s.installing, id]) }));
+		try {
+			if (window.pi?.pkg) await window.pi.pkg.uninstall(id);
+			set((s) => ({ packages: s.packages.map((p) => p.id === id ? {
+				...p,
+				installed: false
+			} : p) }));
+		} finally {
+			set((s) => {
+				const next = new Set(s.installing);
+				next.delete(id);
+				return { installing: next };
+			});
+		}
+	}
+}));
+//#endregion
 //#region src/screens/Packages.tsx
-function PackageCard({ name, author, kind, summary, installed, version, downloads, featured, mark }) {
+function PackageCard({ pkg, onInstall, onUninstall, busy }) {
 	const c = {
 		extension: T.tool,
 		skill: T.info,
 		prompt: T.warn,
 		theme: T.pi,
 		bundle: T.ok
-	}[kind] || T.textDim;
+	}[pkg.kind] || T.textDim;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		style: {
 			padding: "14px 16px",
 			borderRadius: 6,
-			border: `1px solid ${featured ? T.piBorder : T.border}`,
-			background: featured ? T.piBg : T.bgPanel,
+			border: `1px solid ${pkg.featured ? T.piBorder : T.border}`,
+			background: pkg.featured ? T.piBg : T.bgPanel,
 			display: "flex",
 			flexDirection: "column",
 			gap: 8
@@ -12748,7 +12947,7 @@ function PackageCard({ name, author, kind, summary, installed, version, download
 							color: c,
 							fontWeight: 600
 						},
-						children: mark
+						children: pkg.mark
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						style: {
@@ -12768,14 +12967,14 @@ function PackageCard({ name, author, kind, summary, installed, version, download
 									color: T.text,
 									fontWeight: 500
 								},
-								children: name
+								children: pkg.name
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 								style: {
 									fontFamily: F.mono,
 									fontSize: 10.5,
 									color: T.textMuted
 								},
-								children: ["v", version]
+								children: ["v", pkg.version]
 							})]
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							style: {
@@ -12784,14 +12983,14 @@ function PackageCard({ name, author, kind, summary, installed, version, download
 								color: T.textMuted,
 								marginTop: 2
 							},
-							children: ["by ", author]
+							children: ["by ", pkg.author]
 						})]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pill, {
 						color: c,
 						bg: `${c}15`,
 						border: `${c}40`,
-						children: kind
+						children: pkg.kind
 					})
 				]
 			}),
@@ -12802,7 +13001,7 @@ function PackageCard({ name, author, kind, summary, installed, version, download
 					color: T.textDim,
 					lineHeight: 1.5
 				},
-				children: summary
+				children: pkg.summary
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				style: {
@@ -12819,20 +13018,34 @@ function PackageCard({ name, author, kind, summary, installed, version, download
 							fontSize: 10,
 							color: T.textFaint
 						},
-						children: ["⇣ ", downloads]
+						children: ["⇣ ", pkg.downloads]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 } }),
-					installed ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Pill, {
-						color: T.ok,
-						bg: T.okBg,
-						border: "rgba(143,184,106,0.3)",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Dot, {
+					pkg.installed ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							alignItems: "center",
+							gap: 6
+						},
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Pill, {
 							color: T.ok,
-							size: 5
-						}), " installed"]
+							bg: T.okBg,
+							border: "rgba(143,184,106,0.3)",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Dot, {
+								color: T.ok,
+								size: 5
+							}), " installed"]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
+							variant: "ghost",
+							onClick: onUninstall,
+							disabled: busy,
+							children: busy ? "…" : "remove"
+						})]
 					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 						variant: "outline",
-						children: "install"
+						onClick: onInstall,
+						disabled: busy,
+						children: busy ? "installing…" : "install"
 					})
 				]
 			})
@@ -12841,6 +13054,13 @@ function PackageCard({ name, author, kind, summary, installed, version, download
 }
 function Packages() {
 	const { navigate } = useNav();
+	const { packages, installing, loadPackages, install, uninstall } = usePackageStore();
+	(0, import_react.useEffect)(() => {
+		loadPackages();
+	}, []);
+	const installed = packages.filter((p) => p.installed);
+	const featured = packages.filter((p) => p.featured && !p.installed);
+	const all = packages.filter((p) => !p.installed);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(PiWindow, {
 		title: "pi · packages",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SidebarMain, {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -12901,10 +13121,10 @@ function Packages() {
 						[
 							[
 								"installed",
-								"8",
+								String(installed.length),
 								true
 							],
-							["discover", "127"],
+							["discover", String(all.length)],
 							["extensions", "52"],
 							["skills", "38"],
 							["prompts", "24"],
@@ -12959,7 +13179,7 @@ function Packages() {
 					background: T.bg
 				},
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					installed.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						style: {
 							fontFamily: F.mono,
 							fontSize: 10,
@@ -12968,60 +13188,22 @@ function Packages() {
 							letterSpacing: .8,
 							marginBottom: 10
 						},
-						children: "installed · 8"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						children: ["installed · ", installed.length]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						style: {
 							display: "grid",
 							gridTemplateColumns: "1fr 1fr",
 							gap: 10,
 							marginBottom: 22
 						},
-						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PackageCard, {
-								name: "@termdraw/pi",
-								author: "benvinegar",
-								kind: "extension",
-								mark: "✎",
-								version: "1.4.2",
-								downloads: "4.1k",
-								installed: true,
-								summary: "Draw inside the terminal — sketch flow diagrams, sketches, and ASCII art with mouse + tablet input."
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PackageCard, {
-								name: "@earendil/plan-mode",
-								author: "earendil",
-								kind: "extension",
-								mark: "◐",
-								version: "2.0.1",
-								downloads: "18.4k",
-								installed: true,
-								featured: true,
-								summary: "Adds /plan command — pi writes a plan, you approve, it executes. Pauses between phases for review."
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PackageCard, {
-								name: "claude-warm",
-								author: "mariozechner",
-								kind: "theme",
-								mark: "❒",
-								version: "0.6.0",
-								downloads: "2.7k",
-								installed: true,
-								summary: "Warm amber palette with off-black surfaces. Designed to look good in dim rooms."
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PackageCard, {
-								name: "rust-engineer",
-								author: "badlogic",
-								kind: "skill",
-								mark: "◧",
-								version: "1.0.4",
-								downloads: "3.2k",
-								installed: true,
-								summary: "Rust-specific debugging skill: knows cargo, miri, criterion. Loaded on demand when working in Rust projects."
-							})
-						]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						children: installed.map((p) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PackageCard, {
+							pkg: p,
+							busy: installing.has(p.id),
+							onInstall: () => install(p.id),
+							onUninstall: () => uninstall(p.id)
+						}, p.id))
+					})] }),
+					featured.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						style: {
 							fontFamily: F.mono,
 							fontSize: 10,
@@ -13031,54 +13213,20 @@ function Packages() {
 							marginBottom: 10
 						},
 						children: "featured this week"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						style: {
 							display: "grid",
 							gridTemplateColumns: "1fr 1fr",
 							gap: 10,
 							marginBottom: 22
 						},
-						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PackageCard, {
-								name: "pi-doom",
-								author: "badlogic",
-								kind: "bundle",
-								mark: "◉",
-								version: "0.3.1",
-								downloads: "11.8k",
-								featured: true,
-								summary: "DOOM, but pi plays it. Bundle of an extension that pipes frames through the TUI plus a skill that teaches pi WAD strategy."
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PackageCard, {
-								name: "@oss/sub-agents",
-								author: "oss",
-								kind: "extension",
-								mark: "◯",
-								version: "1.2.0",
-								downloads: "9.3k",
-								summary: "Spawn child pi instances from a tool call. Each runs in its own session tree, results stream back to the parent."
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PackageCard, {
-								name: "commit-and-push",
-								author: "mariozechner",
-								kind: "prompt",
-								mark: "❖",
-								version: "0.4.0",
-								downloads: "6.1k",
-								summary: "The /commit prompt — generates conventional commits from your staged diff with optional emoji, scopes, and ticket refs."
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PackageCard, {
-								name: "permission-gate",
-								author: "earendil",
-								kind: "extension",
-								mark: "🔒",
-								version: "1.1.0",
-								downloads: "5.7k",
-								summary: "Confirm-before-execute popup for dangerous tools. Allow-list paths, command prefixes, and tool names."
-							})
-						]
-					}),
+						children: featured.map((p) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PackageCard, {
+							pkg: p,
+							busy: installing.has(p.id),
+							onInstall: () => install(p.id),
+							onUninstall: () => uninstall(p.id)
+						}, p.id))
+					})] }),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						style: {
 							fontFamily: F.mono,
@@ -13924,14 +14072,67 @@ Rules:
 }
 //#endregion
 //#region src/screens/ContextEditor.tsx
-function FileRow({ name, active, kind }) {
-	const kindColor = {
+var CONTEXT_FILES = [
+	{
+		path: "~/.pi/AGENTS.md",
+		kind: "agents",
+		scope: "user"
+	},
+	{
+		path: "~/.pi/SYSTEM.md",
+		kind: "system",
+		scope: "user"
+	},
+	{
+		path: "./AGENTS.md",
+		kind: "agents",
+		scope: "project"
+	},
+	{
+		path: "./SYSTEM.md",
+		kind: "system",
+		scope: "project"
+	},
+	{
+		path: "./src/AGENTS.md",
+		kind: "agents",
+		scope: "project"
+	},
+	{
+		path: "./CLAUDE.md",
+		kind: "project",
+		scope: "project"
+	}
+];
+var PLACEHOLDER = `# AGENTS.md — Project context for pi
+
+This is the pi project's coding assistant configuration.
+Loaded automatically when pi is invoked from this directory.
+
+## Project
+
+Name: my-project
+Stack: TypeScript · React
+Purpose: Describe your project here.
+
+## Conventions
+
+- All React components use function syntax
+- TypeScript strict mode enabled
+
+## Tool use policy
+
+- Prefer read before write — always check the file first
+- Never run \`rm -rf\` without listing contents first
+- Shell commands: use \`--no-pager\` with git`;
+function FileRow({ file, active, onClick }) {
+	const c = {
 		agents: T.pi,
 		system: T.tool,
 		project: T.ok
-	};
-	const c = kind ? kindColor[kind] || T.textDim : T.textDim;
+	}[file.kind] || T.textDim;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		onClick,
 		style: {
 			padding: "7px 12px",
 			borderRadius: 4,
@@ -13957,18 +14158,59 @@ function FileRow({ name, active, kind }) {
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 				style: { flex: 1 },
-				children: name
+				children: file.path
 			}),
-			kind && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pill, {
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pill, {
 				color: c,
 				bg: `${c}15`,
 				border: `${c}40`,
-				children: kind
+				children: file.kind
 			})
 		]
 	});
 }
 function ContextEditor() {
+	const [activeFile, setActiveFile] = (0, import_react.useState)(CONTEXT_FILES[2]);
+	const [content, setContent] = (0, import_react.useState)("");
+	const [savedContent, setSavedContent] = (0, import_react.useState)("");
+	const [loading, setLoading] = (0, import_react.useState)(true);
+	const [projectCwd, setProjectCwd] = (0, import_react.useState)("");
+	const saveTimer = (0, import_react.useRef)(null);
+	(0, import_react.useEffect)(() => {
+		if (window.pi?.app) window.pi.app.getCwd().then(setProjectCwd).catch(() => {});
+	}, []);
+	const loadFile = (0, import_react.useCallback)(async (file) => {
+		setLoading(true);
+		if (window.pi?.fs) try {
+			const resolved = file.path.startsWith("~/.pi/") ? file.path.replace("~/.pi/", "") : file.path.startsWith("./") && projectCwd ? `${projectCwd}/${file.path.slice(2)}` : file.path;
+			const text = await window.pi.fs.readFile(resolved);
+			setContent(text);
+			setSavedContent(text);
+			setLoading(false);
+			return;
+		} catch {}
+		setContent(PLACEHOLDER);
+		setSavedContent(PLACEHOLDER);
+		setLoading(false);
+	}, [projectCwd]);
+	(0, import_react.useEffect)(() => {
+		loadFile(activeFile);
+	}, [activeFile, loadFile]);
+	const saveFile = (0, import_react.useCallback)(async (text) => {
+		if (!window.pi?.fs) return;
+		try {
+			const resolved = activeFile.path.startsWith("~/.pi/") ? activeFile.path.replace("~/.pi/", "") : activeFile.path.startsWith("./") && projectCwd ? `${projectCwd}/${activeFile.path.slice(2)}` : activeFile.path;
+			await window.pi.fs.writeFile(resolved, text);
+			setSavedContent(text);
+		} catch {}
+	}, [activeFile, projectCwd]);
+	const handleChange = (text) => {
+		setContent(text);
+		if (saveTimer.current) clearTimeout(saveTimer.current);
+		saveTimer.current = setTimeout(() => saveFile(text), 1e3);
+	};
+	const lines = content.split("\n").length;
+	const saved = content === savedContent;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(PiWindow, {
 		title: "pi · context editor",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SidebarMain, {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -14029,37 +14271,18 @@ function ContextEditor() {
 					},
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionLabel, { children: "hierarchy · user scope" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileRow, {
-							name: "~/.pi/AGENTS.md",
-							kind: "agents"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileRow, {
-							name: "~/.pi/SYSTEM.md",
-							kind: "system"
-						}),
+						CONTEXT_FILES.filter((f) => f.scope === "user").map((f) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileRow, {
+							file: f,
+							active: f.path === activeFile.path,
+							onClick: () => setActiveFile(f)
+						}, f.path)),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 8 } }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionLabel, { children: "hierarchy · project scope" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileRow, {
-							name: "./AGENTS.md",
-							kind: "agents",
-							active: true
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileRow, {
-							name: "./SYSTEM.md",
-							kind: "system"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileRow, {
-							name: "./src/AGENTS.md",
-							kind: "agents"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileRow, {
-							name: "./CLAUDE.md",
-							kind: "project"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 8 } }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionLabel, { children: "injected · installed pkg" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileRow, { name: "@earendil/plan-mode" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileRow, { name: "rust-engineer skill" }),
+						CONTEXT_FILES.filter((f) => f.scope === "project").map((f) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileRow, {
+							file: f,
+							active: f.path === activeFile.path,
+							onClick: () => setActiveFile(f)
+						}, f.path)),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 10 } }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 							variant: "ghost",
@@ -14090,18 +14313,19 @@ function ContextEditor() {
 									fontSize: 13,
 									color: T.pi
 								},
-								children: "./AGENTS.md"
+								children: activeFile.path
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pill, {
-								color: T.ok,
-								bg: T.okBg,
-								border: "rgba(143,184,106,0.3)",
-								children: "saved"
+								color: saved ? T.ok : T.warn,
+								bg: saved ? T.okBg : `${T.warn}15`,
+								border: saved ? "rgba(143,184,106,0.3)" : `${T.warn}40`,
+								children: loading ? "loading…" : saved ? "saved" : "unsaved"
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 } }),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 								variant: "ghost",
 								icon: "↺",
+								onClick: () => saveFile(content),
 								children: "/reload"
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
@@ -14140,59 +14364,32 @@ function ContextEditor() {
 										fontSize: 11.5,
 										color: T.textFaint,
 										lineHeight: "20px",
-										textAlign: "right"
+										textAlign: "right",
+										userSelect: "none"
 									},
-									children: Array.from({ length: 40 }, (_, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									children: Array.from({ length: lines }, (_, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 										style: { padding: "0 8px" },
 										children: i + 1
 									}, i))
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("pre", {
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("textarea", {
+									value: content,
+									onChange: (e) => handleChange(e.target.value),
+									spellCheck: false,
 									style: {
 										flex: 1,
 										margin: 0,
 										padding: "14px 18px",
-										overflow: "auto",
 										fontFamily: F.mono,
 										fontSize: 12.5,
 										color: T.text,
 										lineHeight: "20px",
-										whiteSpace: "pre-wrap"
-									},
-									children: `# AGENTS.md — Project context for pi
-
-This is the ${String.fromCharCode(112, 105)} project's coding assistant configuration.
-Loaded automatically when pi is invoked from this directory.
-
-## Project
-
-Name: piui  
-Stack: TypeScript · React · Vite · Electron  
-Purpose: Desktop UI for the pi coding agent CLI.
-
-## Conventions
-
-- All React components use function syntax (no class components)
-- TypeScript strict mode enabled
-- Imports: primitives from \`@/components/primitives\`
-- All screens live in \`src/screens/\`
-- Design tokens imported from \`src/tokens.ts\`
-
-## Tool use policy
-
-- Prefer read before write — always check the file first
-- Never run \`rm -rf\` without listing contents first
-- Shell commands: use \`--no-pager\` with git
-
-[plan-mode]
-auto_approve = false
-phases = 5
-pause_on_err = true
-
-## Context window
-
-The project uses warm dark theme (T.bg = #0e0d0b).
-Accent color is amber (T.pi = #f0a45a).
-Font stack: Geist Mono (primary), Geist (prose).`
+										background: "transparent",
+										border: "none",
+										outline: "none",
+										resize: "none",
+										whiteSpace: "pre",
+										overflowWrap: "normal"
+									}
 								})]
 							})
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -14226,7 +14423,7 @@ Font stack: Geist Mono (primary), Geist (prose).`
 										],
 										[
 											"./AGENTS.md",
-											"687 tok",
+											`${Math.ceil(content.length / 4)} tok`,
 											T.pi
 										],
 										[
@@ -14285,14 +14482,14 @@ Font stack: Geist Mono (primary), Geist (prose).`
 												fontWeight: 600
 											},
 											children: "total"
-										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 											style: {
 												fontFamily: F.mono,
 												fontSize: 10,
 												color: T.text,
 												fontWeight: 600
 											},
-											children: "1,434 tok"
+											children: [(312 + Math.ceil(content.length / 4) + 201 + 145 + 89).toLocaleString(), " tok"]
 										})]
 									})]
 								}),
@@ -14330,6 +14527,12 @@ Font stack: Geist Mono (primary), Geist (prose).`
 	});
 }
 //#endregion
+//#region src/store/settingsStore.ts
+var useSettingsStore = create((set) => ({
+	theme: "pi-dark",
+	setTheme: (theme) => set({ theme })
+}));
+//#endregion
 //#region src/screens/ThemeCustomizer.tsx
 function Swatch({ color }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: {
@@ -14340,13 +14543,14 @@ function Swatch({ color }) {
 		border: "1px solid rgba(255,255,255,0.08)"
 	} });
 }
-function ThemeCard({ theme }) {
+function ThemeCard({ theme, active, onSelect }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		onClick: onSelect,
 		style: {
 			borderRadius: 6,
 			overflow: "hidden",
 			cursor: "pointer",
-			border: `2px solid ${theme.active ? T.pi : T.border}`
+			border: `2px solid ${active ? T.pi : T.border}`
 		},
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 			style: {
@@ -14385,13 +14589,13 @@ function ThemeCard({ theme }) {
 						children: ["by ", theme.author]
 					})]
 				}),
-				theme.active && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pill, {
+				active && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pill, {
 					color: T.pi,
 					bg: T.piBg,
 					border: T.piBorder,
 					children: "active"
 				}),
-				theme.installed && !theme.active && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Dot, {
+				theme.installed && !active && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Dot, {
 					color: T.ok,
 					size: 5
 				})
@@ -14409,7 +14613,6 @@ var THEMES = [
 			"#f0a45a",
 			"#2c2a24"
 		],
-		active: true,
 		installed: true
 	},
 	{
@@ -14523,6 +14726,12 @@ function TokenRow({ name, value, preview }) {
 	});
 }
 function ThemeCustomizer() {
+	const { theme, setTheme } = useSettingsStore();
+	(0, import_react.useEffect)(() => {
+		if (!window.pi?.fs) return;
+		window.pi.fs.writeFile("themes/current.json", JSON.stringify({ theme })).catch(() => {});
+	}, [theme]);
+	const activeTheme = THEMES.find((t) => t.name === theme) ?? THEMES[0];
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(PiWindow, {
 		title: "pi · theme",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SidebarMain, {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -14594,7 +14803,11 @@ function ThemeCustomizer() {
 								gap: 10,
 								marginBottom: 22
 							},
-							children: THEMES.map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ThemeCard, { theme: t }, t.name))
+							children: THEMES.map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ThemeCard, {
+								theme: t,
+								active: t.name === theme,
+								onSelect: () => setTheme(t.name)
+							}, t.name))
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 							style: {
@@ -14781,7 +14994,7 @@ function ThemeCustomizer() {
 									fontSize: 12.5,
 									color: T.text
 								},
-								children: "pi-dark"
+								children: activeTheme.name
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pill, {
 								color: T.pi,

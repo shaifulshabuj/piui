@@ -60,9 +60,7 @@ function findPiBinary() {
 	return null;
 }
 var JsonlReader = class {
-	constructor() {
-		this.buf = Buffer.alloc(0);
-	}
+	buf = Buffer.alloc(0);
 	feed(chunk) {
 		this.buf = Buffer.concat([this.buf, chunk]);
 		const results = [];
@@ -78,14 +76,12 @@ var JsonlReader = class {
 	}
 };
 var PiProcessManager = class {
-	constructor() {
-		this.proc = null;
-		this.reader = new JsonlReader();
-		this.window = null;
-		this.binaryPath = null;
-		this.available = false;
-		this.restarting = false;
-	}
+	proc = null;
+	reader = new JsonlReader();
+	window = null;
+	binaryPath = null;
+	available = false;
+	restarting = false;
 	setWindow(win) {
 		this.window = win;
 	}
@@ -138,6 +134,9 @@ var PiProcessManager = class {
 	isAvailable() {
 		return this.available && !!this.proc;
 	}
+	getBinaryPath() {
+		return this.binaryPath;
+	}
 	getStatus() {
 		return {
 			available: this.available,
@@ -154,14 +153,20 @@ var PiProcessManager = class {
 var piManager = new PiProcessManager();
 //#endregion
 //#region electron/ipc.ts
+var PI_HOME = path.join(os.homedir(), ".pi");
 var ALLOWED_ROOTS = [
-	path.join(os.homedir(), ".pi"),
+	PI_HOME,
 	path.join(os.homedir(), ".config", "pi"),
 	process.cwd()
 ];
 function isPathAllowed(filePath) {
 	const resolved = path.resolve(filePath);
 	return ALLOWED_ROOTS.some((root) => resolved === root || resolved.startsWith(root + path.sep));
+}
+/** Resolve a relative path against ~/.pi */
+function resolvePiPath(relOrAbs) {
+	if (path.isAbsolute(relOrAbs)) return relOrAbs;
+	return path.join(PI_HOME, relOrAbs);
 }
 function registerIpcHandlers() {
 	electron.ipcMain.handle("pi:send", async (_, cmd) => {
@@ -171,30 +176,65 @@ function registerIpcHandlers() {
 		return piManager.getStatus();
 	});
 	electron.ipcMain.handle("fs:readFile", async (_, filePath) => {
-		if (!isPathAllowed(filePath)) throw new Error(`Access denied: ${filePath}`);
-		return fs_promises.readFile(path.resolve(filePath), "utf8");
+		const resolved = resolvePiPath(filePath);
+		if (!isPathAllowed(resolved)) throw new Error(`Access denied: ${filePath}`);
+		return fs_promises.readFile(resolved, "utf8");
 	});
 	electron.ipcMain.handle("fs:writeFile", async (_, filePath, content) => {
-		if (!isPathAllowed(filePath)) throw new Error(`Access denied: ${filePath}`);
-		await fs_promises.writeFile(path.resolve(filePath), content, "utf8");
+		const resolved = resolvePiPath(filePath);
+		if (!isPathAllowed(resolved)) throw new Error(`Access denied: ${filePath}`);
+		await fs_promises.mkdir(path.dirname(resolved), { recursive: true });
+		await fs_promises.writeFile(resolved, content, "utf8");
 	});
 	electron.ipcMain.handle("fs:listDir", async (_, dirPath) => {
-		if (!isPathAllowed(dirPath)) throw new Error(`Access denied: ${dirPath}`);
-		return (await fs_promises.readdir(path.resolve(dirPath), { withFileTypes: true })).map((e) => ({
-			name: e.name,
-			isDir: e.isDirectory()
-		}));
+		const resolved = resolvePiPath(dirPath);
+		if (!isPathAllowed(resolved)) throw new Error(`Access denied: ${dirPath}`);
+		try {
+			return (await fs_promises.readdir(resolved, { withFileTypes: true })).map((e) => ({
+				name: e.name,
+				isDir: e.isDirectory()
+			}));
+		} catch {
+			return [];
+		}
 	});
 	electron.ipcMain.handle("fs:exists", async (_, filePath) => {
-		if (!isPathAllowed(filePath)) return false;
+		const resolved = resolvePiPath(filePath);
+		if (!isPathAllowed(resolved)) return false;
 		try {
-			await fs_promises.access(path.resolve(filePath));
+			await fs_promises.access(resolved);
 			return true;
 		} catch {
 			return false;
 		}
 	});
+	electron.ipcMain.handle("pi:pkgExec", async (_, subCmd, pkgId) => {
+		if (!pkgId.match(/^[a-zA-Z0-9@/._:-]{1,200}$/)) throw new Error("Invalid package id");
+		return new Promise((resolve, reject) => {
+			const proc = (0, child_process.spawn)(piManager.getBinaryPath() ?? "pi", [subCmd, pkgId], {
+				stdio: [
+					"ignore",
+					"pipe",
+					"pipe"
+				],
+				env: { ...process.env }
+			});
+			let out = "";
+			proc.stdout?.on("data", (d) => {
+				out += d.toString();
+			});
+			proc.stderr?.on("data", (d) => {
+				out += d.toString();
+			});
+			proc.on("close", (code) => {
+				if (code === 0) resolve(out.trim());
+				else reject(new Error(out.trim() || `pi ${subCmd} exited ${code}`));
+			});
+			proc.on("error", reject);
+		});
+	});
 	electron.ipcMain.handle("app:version", async () => electron.app.getVersion());
+	electron.ipcMain.handle("app:cwd", async () => process.cwd());
 	electron.ipcMain.handle("app:quit", async () => electron.app.quit());
 }
 //#endregion

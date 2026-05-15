@@ -1,9 +1,11 @@
+import { useEffect } from 'react';
 import { T, F } from '../tokens';
 import { Pill, Btn, Dot, SectionLabel } from '../components/primitives';
 import { PiWindow, SidebarMain } from '../components/shell';
+import { useSettingsStore } from '../store/settingsStore';
 
 interface ThemeEntry {
-  name: string; author: string; preview: string[]; active?: boolean; installed?: boolean;
+  name: string; author: string; preview: string[]; installed?: boolean;
 }
 
 function Swatch({ color }: { color: string }) {
@@ -15,11 +17,11 @@ function Swatch({ color }: { color: string }) {
   );
 }
 
-function ThemeCard({ theme }: { theme: ThemeEntry }) {
+function ThemeCard({ theme, active, onSelect }: { theme: ThemeEntry; active: boolean; onSelect: () => void }) {
   return (
-    <div style={{
+    <div onClick={onSelect} style={{
       borderRadius: 6, overflow: 'hidden', cursor: 'pointer',
-      border: `2px solid ${theme.active ? T.pi : T.border}`,
+      border: `2px solid ${active ? T.pi : T.border}`,
     }}>
       <div style={{
         height: 60, background: theme.preview[0],
@@ -33,15 +35,15 @@ function ThemeCard({ theme }: { theme: ThemeEntry }) {
           <div style={{ fontFamily: F.mono, fontSize: 11.5, color: T.text }}>{theme.name}</div>
           <div style={{ fontFamily: F.mono, fontSize: 10, color: T.textMuted }}>by {theme.author}</div>
         </div>
-        {theme.active && <Pill color={T.pi} bg={T.piBg} border={T.piBorder}>active</Pill>}
-        {theme.installed && !theme.active && <Dot color={T.ok} size={5} />}
+        {active && <Pill color={T.pi} bg={T.piBg} border={T.piBorder}>active</Pill>}
+        {theme.installed && !active && <Dot color={T.ok} size={5} />}
       </div>
     </div>
   );
 }
 
 const THEMES: ThemeEntry[] = [
-  { name: 'pi-dark', author: 'earendil', preview: ['#0e0d0b', '#15140f', '#f0a45a', '#2c2a24'], active: true, installed: true },
+  { name: 'pi-dark', author: 'earendil', preview: ['#0e0d0b', '#15140f', '#f0a45a', '#2c2a24'], installed: true },
   { name: 'claude-warm', author: 'mariozechner', preview: ['#12110e', '#1a180f', '#e8a84d', '#25231a'], installed: true },
   { name: 'pi-light', author: 'earendil', preview: ['#faf8f2', '#f0ede6', '#d4691c', '#e8e0d0'] },
   { name: 'nord-pi', author: 'community', preview: ['#2e3440', '#3b4252', '#88c0d0', '#4c566a'] },
@@ -62,6 +64,16 @@ function TokenRow({ name, value, preview }: { name: string; value: string; previ
 }
 
 export function ThemeCustomizer() {
+  const { theme, setTheme } = useSettingsStore();
+
+  // Persist active theme to ~/.pi/themes/current.json
+  useEffect(() => {
+    if (!window.pi?.fs) return;
+    window.pi.fs.writeFile('themes/current.json', JSON.stringify({ theme }))
+      .catch(() => { /* best-effort */ });
+  }, [theme]);
+
+  const activeTheme = THEMES.find((t) => t.name === theme) ?? THEMES[0];
   return (
     <PiWindow title="pi · theme">
       <SidebarMain />
@@ -77,7 +89,9 @@ export function ThemeCustomizer() {
           <div style={{ flex: 1, overflow: 'auto', padding: '18px 22px', background: T.bg }}>
             <div style={{ fontFamily: F.mono, fontSize: 10, color: T.textFaint, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 }}>gallery</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 22 }}>
-              {THEMES.map((t) => <ThemeCard key={t.name} theme={t} />)}
+              {THEMES.map((t) => (
+                <ThemeCard key={t.name} theme={t} active={t.name === theme} onSelect={() => setTheme(t.name)} />
+              ))}
             </div>
 
             <div style={{ fontFamily: F.mono, fontSize: 10, color: T.textFaint, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>live preview</div>
@@ -125,7 +139,7 @@ export function ThemeCustomizer() {
 
           <div style={{ width: 240, flexShrink: 0, borderLeft: `1px solid ${T.border}`, background: T.bgPanel, overflow: 'auto' }}>
             <div style={{ padding: '12px 14px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontFamily: F.mono, fontSize: 12.5, color: T.text }}>pi-dark</span>
+              <span style={{ fontFamily: F.mono, fontSize: 12.5, color: T.text }}>{activeTheme.name}</span>
               <Pill color={T.pi} bg={T.piBg} border={T.piBorder}>active</Pill>
               <div style={{ flex: 1 }} />
               <Btn variant="ghost" icon="✎">Edit JSON</Btn>

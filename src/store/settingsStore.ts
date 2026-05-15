@@ -6,6 +6,6 @@ interface SettingsState {
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
-  theme: 'warm-dark',
+  theme: 'pi-dark',
   setTheme: (theme) => set({ theme }),
 }))
