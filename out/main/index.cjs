@@ -371,7 +371,7 @@ async function createWindow() {
 	});
 	if (process.env["ELECTRON_RENDERER_URL"]) {
 		mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
-		mainWindow.webContents.openDevTools();
+		mainWindow.webContents.openDevTools({ mode: "detach" });
 	} else mainWindow.loadFile((0, path.join)(__dirname, "../renderer/index.html"));
 	mainWindow.once("ready-to-show", () => mainWindow.show());
 	setTimeout(() => {
