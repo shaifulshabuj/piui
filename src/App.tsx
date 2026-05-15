@@ -1,0 +1,52 @@
+import './index.css';
+import { NavProvider, useNav } from './context/NavContext';
+import { MainChat } from './screens/MainChat';
+import { Onboarding } from './screens/Onboarding';
+import { SessionTree } from './screens/SessionTree';
+import { ModelPicker } from './screens/ModelPicker';
+import { Packages } from './screens/Packages';
+import { ExtensionDetail } from './screens/ExtensionDetail';
+import { PromptTemplates } from './screens/PromptTemplates';
+import { ContextEditor } from './screens/ContextEditor';
+import { ThemeCustomizer } from './screens/ThemeCustomizer';
+import { ShareExport } from './screens/ShareExport';
+import { ToolInspector } from './screens/ToolInspector';
+import { Steering } from './screens/Steering';
+import { CommandPalette } from './screens/CommandPalette';
+import { PermissionPrompt } from './screens/PermissionPrompt';
+
+function AppRouter() {
+  const { screen, overlay } = useNav();
+
+  const screens: Record<string, React.ReactNode> = {
+    chat: <MainChat />,
+    onboarding: <Onboarding />,
+    tree: <SessionTree />,
+    model: <ModelPicker />,
+    packages: <Packages />,
+    'ext-detail': <ExtensionDetail />,
+    prompts: <PromptTemplates />,
+    context: <ContextEditor />,
+    theme: <ThemeCustomizer />,
+    share: <ShareExport />,
+    inspect: <ToolInspector />,
+    steering: <Steering />,
+  };
+
+  return (
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      {screens[screen] ?? <MainChat />}
+      {overlay === 'command-palette' && <CommandPalette />}
+      {overlay === 'permission-prompt' && <PermissionPrompt />}
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <NavProvider>
+      <AppRouter />
+    </NavProvider>
+  );
+}
+

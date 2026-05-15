@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>pi · UI design</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body { background: #f0eee9; }
+    @keyframes pi-blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+    @keyframes pi-pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.4); opacity: 0.5; }
+    }
+  </style>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="tokens.jsx"></script>
+  <script type="text/babel" src="screens/main-chat.jsx"></script>
+  <script type="text/babel" src="screens/onboarding.jsx"></script>
+  <script type="text/babel" src="screens/session-tree.jsx"></script>
+  <script type="text/babel" src="screens/model-picker.jsx"></script>
+  <script type="text/babel" src="screens/packages.jsx"></script>
+  <script type="text/babel" src="screens/prompt-templates.jsx"></script>
+  <script type="text/babel" src="screens/context-editor.jsx"></script>
+  <script type="text/babel" src="screens/inspect-permission.jsx"></script>
+  <script type="text/babel" src="screens/steering.jsx"></script>
+  <script type="text/babel" src="screens/theme.jsx"></script>
+  <script type="text/babel" src="screens/share-export.jsx"></script>
+  <script type="text/babel" src="screens/commands-extension.jsx"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // Intro / context panel — pinned at the top-left of the canvas.
+    function IntroNote() {
+      return (
+        <div data-screen-label="00 Brief"
+          style={{
+            width: 760, background: '#1c1b15',
+            color: '#e9e4d4', fontFamily: T.F?.sans || 'Geist, sans-serif',
+            padding: '28px 32px', borderRadius: 10,
+            border: `1px solid ${T.border}`,
+            boxShadow: '0 12px 32px rgba(0,0,0,0.25)',
+          }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 12 }}>
+            <span style={{ fontFamily: F.mono, fontSize: 48, color: T.pi,
+              fontWeight: 500, lineHeight: 1 }}>π</span>
+            <div>
+              <div style={{ fontFamily: F.sans, fontSize: 22, fontWeight: 500,
+                letterSpacing: -0.4 }}>pi · desktop UI</div>
+              <div style={{ fontFamily: F.mono, fontSize: 12, color: T.textMuted, marginTop: 3 }}>
+                terminal-rooted, discoverable · 13 screens · for Claude Code handoff
+              </div>
+            </div>
+          </div>
+
+          <div style={{ fontFamily: F.sans, fontSize: 13.5, lineHeight: 1.65,
+            color: T.textDim, marginBottom: 14 }}>
+            pi is a minimal terminal coding harness — every feature in the CLI maps to a
+            surface here. The aesthetic stays terminal-rooted: dense, monospace-forward,
+            warm amber accent, dark by default. Sans-serif is reserved for chrome titles
+            and prose. Every screen is 1280×800 in a macOS window. Click any artboard's ⤢
+            to focus, or scrub side-to-side to walk the flow.
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14,
+            fontFamily: F.mono, fontSize: 11.5, color: T.textDim, lineHeight: 1.7 }}>
+            <div>
+              <div style={{ color: T.pi, marginBottom: 4, fontWeight: 500 }}># coverage</div>
+              <div>onboarding · install · provider auth</div>
+              <div>main chat · streaming · steering · queue</div>
+              <div>session tree · branches · bookmarks · filter</div>
+              <div>model picker · 15+ providers · favorites</div>
+              <div>packages · skills · extensions · themes · prompts</div>
+              <div>AGENTS.md · SYSTEM.md · compaction</div>
+              <div>tool inspect · diff · permission gate</div>
+              <div>command palette · share &amp; export</div>
+            </div>
+            <div>
+              <div style={{ color: T.pi, marginBottom: 4, fontWeight: 500 }}># design rules</div>
+              <div>geist mono · 11–13.5px primary</div>
+              <div>warm dark · #0e0d0b · pi amber #f0a45a</div>
+              <div>4 / 6 / 8 / 12 / 16 padding scale</div>
+              <div>borders subtle (#2a271f), accent only on focus</div>
+              <div>kbd hints visible everywhere — keyboard-first</div>
+              <div>slash commands feel native to the composer</div>
+              <div>state always legible: running / queued / ok / err</div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 16, padding: '10px 12px',
+            background: T.piBg, border: `1px dashed ${T.piBorder}`,
+            borderRadius: 5, fontFamily: F.mono, fontSize: 11.5, color: T.pi,
+            lineHeight: 1.65 }}>
+            <span style={{ fontWeight: 600 }}>handoff:</span>{' '}
+            tokens in <code style={{ background: T.bgElev, padding: '1px 5px', borderRadius: 3,
+              color: T.text }}>tokens.jsx</code>, one screen per file in{' '}
+            <code style={{ background: T.bgElev, padding: '1px 5px', borderRadius: 3,
+              color: T.text }}>screens/</code>. Mirror the component tree
+            in your stack of choice — each screen is a top-level route, each
+            sub-component is a real concern.
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      return (
+        <DesignCanvas>
+          <DCSection id="brief" title="Pi · desktop UI"
+            subtitle="A complete UI mapping for the pi coding agent — terminal-rooted, dark, discoverable">
+            <DCArtboard id="intro" label="brief" width={760} height={460}>
+              <IntroNote />
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="onboard" title="01 · Onboarding"
+            subtitle="First-run install + provider authentication">
+            <DCArtboard id="install" label="install &amp; connect" width={1280} height={800}>
+              <Onboarding />
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="agent" title="02 · Agent surface"
+            subtitle="The core conversation experience — streaming, tool calls, steering">
+            <DCArtboard id="chat" label="main chat" width={1280} height={800}>
+              <MainChat />
+            </DCArtboard>
+            <DCArtboard id="steer" label="steering &amp; queue" width={1280} height={800}>
+              <Steering />
+            </DCArtboard>
+            <DCArtboard id="palette" label="/ command palette" width={1280} height={800}>
+              <CommandPalette />
+            </DCArtboard>
+            <DCArtboard id="permit" label="permission prompt" width={1280} height={800}>
+              <PermissionPrompt />
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="session" title="03 · Session intelligence"
+            subtitle="Trees, branches, models, sharing — the things that make pi feel like git for chats">
+            <DCArtboard id="tree" label="/tree · branch navigator" width={1280} height={800}>
+              <SessionTree />
+            </DCArtboard>
+            <DCArtboard id="model" label="/model · picker" width={1280} height={800}>
+              <ModelPicker />
+            </DCArtboard>
+            <DCArtboard id="share" label="/share · gist &amp; export" width={1280} height={800}>
+              <ShareExport />
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="inspect" title="04 · Tool inspection"
+            subtitle="Deep-dive on a single tool call — args, output, diff, re-run">
+            <DCArtboard id="inspector" label="edit_file inspector" width={1280} height={800}>
+              <ToolInspector />
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="custom" title="05 · Customization"
+            subtitle="Packages, skills, extensions, prompts, context, theme — the things that make pi yours">
+            <DCArtboard id="packages" label="packages browser" width={1280} height={800}>
+              <Packages />
+            </DCArtboard>
+            <DCArtboard id="ext" label="extension detail · TS source" width={1280} height={800}>
+              <ExtensionDetail />
+            </DCArtboard>
+            <DCArtboard id="prompts" label="prompt templates" width={1280} height={800}>
+              <PromptTemplates />
+            </DCArtboard>
+            <DCArtboard id="context" label="AGENTS.md / SYSTEM.md" width={1280} height={800}>
+              <ContextEditor />
+            </DCArtboard>
+            <DCArtboard id="theme" label="theme customizer" width={1280} height={800}>
+              <ThemeCustomizer />
+            </DCArtboard>
+          </DCSection>
+        </DesignCanvas>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
