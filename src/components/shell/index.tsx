@@ -3,6 +3,7 @@ import { Pi, Dot, NavItem, SectionLabel, Btn } from '../primitives';
 import { useNav } from '../../context/NavContext';
 
 export function PiTitlebar({ title }: { title?: string }) {
+  const isElectron = !!window.pi?.isElectron;
   const dot = (bg: string) => (
     <div style={{ width: 11, height: 11, borderRadius: '50%', background: bg }} />
   );
@@ -14,9 +15,15 @@ export function PiTitlebar({ title }: { title?: string }) {
       background: T.bgPanel,
       WebkitAppRegion: 'drag',
     } as React.CSSProperties}>
-      <div style={{ display: 'flex', gap: 7, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-        {dot('#ff5f56')}{dot('#ffbd2e')}{dot('#27c93f')}
-      </div>
+      {isElectron
+        // Native traffic lights occupy ~75px on the left; add matching spacer
+        ? <div style={{ width: 68 }} />
+        : (
+          <div style={{ display: 'flex', gap: 7, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            {dot('#ff5f56')}{dot('#ffbd2e')}{dot('#27c93f')}
+          </div>
+        )
+      }
       <div style={{
         flex: 1, textAlign: 'center', display: 'flex',
         alignItems: 'center', justifyContent: 'center', gap: 8,

@@ -1,17 +1,33 @@
 {
   "name": "piui",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Desktop UI for the pi coding agent",
   "type": "module",
+  "main": "out/main/index.cjs",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "electron-vite dev",
+    "dev:web": "vite",
+    "build": "electron-vite build",
+    "build:web": "tsc -b && vite build",
+    "build:app": "electron-vite build && electron-builder",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "electron-vite preview"
   },
   "dependencies": {
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "zustand": "^5.0.13"
+  },
+  "build": {
+    "appId": "works.earendil.pi",
+    "productName": "pi",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }]
+    },
+    "files": ["out/**"],
+    "directories": { "output": "release" }
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -19,6 +35,9 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "electron": "^41.6.1",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^6.0.0-beta.1",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",

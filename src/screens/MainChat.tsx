@@ -3,6 +3,7 @@ import { Pill, Btn } from '../components/primitives';
 import { PiWindow, SidebarMain } from '../components/shell';
 import { MessageUser, MessageAssistant, ToolCall, DiffPreview, PlanItem, SteeringQueue, Composer } from '../components/chat';
 import { useNav } from '../context/NavContext';
+import { useChatStore } from '../store/chatStore';
 
 function StreamedPlanList() {
   return (
@@ -26,6 +27,8 @@ function StreamedPlanList() {
 
 export function MainChat() {
   const { navigate, openOverlay } = useNav();
+  const { messages, toolCalls, isStreaming, usage, sendPrompt } = useChatStore();
+
   return (
     <PiWindow title="pi · ~/code/pi-ui · main">
       <SidebarMain />
@@ -42,7 +45,7 @@ export function MainChat() {
           <span style={{ color: T.textFaint }}>·</span>
           <Pill>claude-sonnet-4-5</Pill>
           <span style={{ color: T.textFaint }}>·</span>
-          <span>14 turns · 3 branches</span>
+          <span>{messages.length} turns · 3 branches</span>
           <div style={{ flex: 1 }} />
           <Btn variant="ghost" icon="⎇" onClick={() => navigate('tree')}>Tree</Btn>
           <Btn variant="ghost" icon="↗" onClick={() => navigate('share')}>Share</Btn>
@@ -51,38 +54,56 @@ export function MainChat() {
 
         {/* conversation */}
         <div style={{ flex: 1, overflow: 'auto', minHeight: 0, background: T.bg }}>
-          <MessageUser>
-            Look at SessionStore.loadSession — it occasionally crashes when
-            opening an old session. Find the cause and fix it; the schema
-            migration already exists in migrate.ts.
-          </MessageUser>
+          {/* Static tool call demo below the first two messages */}
+          {messages.map((msg, i) => {
+            if (msg.role === 'user') {
+              return <MessageUser key={msg.id}>{msg.content}</MessageUser>;
+            }
+            if (i === 1) {
+              // Show the plan list for the first assistant message
+              return (
+                <MessageAssistant key={msg.id} streaming={msg.streaming}>
+                  <StreamedPlanList />
+                </MessageAssistant>
+              );
+            }
+            return (
+              <MessageAssistant key={msg.id} streaming={msg.streaming}>
+                {msg.content}
+              </MessageAssistant>
+            );
+          })}
 
-          <MessageAssistant>
-            <StreamedPlanList />
-          </MessageAssistant>
+          {/* Static tool call demo (always shown after first exchange) */}
+          {messages.length >= 2 && (
+            <>
+              <ToolCall tool="read_file" args="src/session/store.ts" status="ok" output="412 lines" />
+              <ToolCall tool="read_file" args="src/session/migrate.ts" status="ok" output="186 lines" />
+              <ToolCall tool="grep" args='"loadSession\\(" --type=ts' status="ok" output="6 matches" />
+              <ToolCall tool="edit_file" args="src/session/store.ts" status="ok"
+                output="+12 −1" expanded accent={T.ok}>
+                <DiffPreview />
+              </ToolCall>
+              {isStreaming && (
+                <ToolCall tool="bash" args="pnpm vitest run session/" status="run" output="streaming…" />
+              )}
+            </>
+          )}
 
-          <ToolCall tool="read_file" args="src/session/store.ts" status="ok" output="412 lines" />
-          <ToolCall tool="read_file" args="src/session/migrate.ts" status="ok" output="186 lines" />
-          <ToolCall tool="grep" args='"loadSession\\(" --type=ts' status="ok" output="6 matches" />
-
-          <ToolCall tool="edit_file" args="src/session/store.ts" status="ok"
-            output="+12 −1" expanded accent={T.ok}>
-            <DiffPreview />
-          </ToolCall>
-
-          <ToolCall tool="bash" args="pnpm vitest run session/" status="run" output="streaming…" />
-
-          <MessageAssistant streaming>
-            Tests are running. Adding the v0 → v2 fixture round-trip first
-            so we catch the truncated <code style={{ color: T.pi }}>branches</code>{' '}
-            field — that was the actual crash, not the missing-file path.
-          </MessageAssistant>
+          {/* Live tool calls from pi process */}
+          {toolCalls.map((tc) => (
+            <ToolCall key={tc.id} tool={tc.tool} args={tc.args} status={tc.status} output={tc.output} />
+          ))}
 
           <SteeringQueue />
           <div style={{ height: 14 }} />
         </div>
 
-        <Composer onCommandPalette={() => openOverlay('command-palette')} />
+        <Composer
+          onCommandPalette={() => openOverlay('command-palette')}
+          onSubmit={sendPrompt}
+          usage={usage}
+        />
       </div>
     </PiWindow>
   );

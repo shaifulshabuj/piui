@@ -1,13 +1,12 @@
 import { T, F } from '../tokens';
 import { Pill, Btn, Kbd, SectionLabel } from '../components/primitives';
 import { PiWindow, SidebarMain } from '../components/shell';
+import { useModelStore } from '../store/modelStore';
+import type { Model } from '../types';
 
-function ModelRow({ provider, name, ctx, price, fav, current, status, tags }: {
-  provider: string; name: string; ctx: string; price: string;
-  fav?: boolean; current?: boolean; status: string; tags?: string[];
-}) {
+function ModelRow({ provider, name, ctx, price, fav, current, status, tags, onClick }: Model & { onClick?: () => void }) {
   return (
-    <div style={{
+    <div onClick={onClick} style={{
       display: 'grid', gridTemplateColumns: '14px 1fr auto auto auto',
       gap: 14, alignItems: 'center', padding: '9px 14px',
       borderTop: `1px solid ${T.borderDim}`,
@@ -53,6 +52,8 @@ function ProviderTab({ name, count, active }: { name: string; count?: string; ac
 }
 
 export function ModelPicker() {
+  const { models, setCurrentModel } = useModelStore();
+
   return (
     <PiWindow title="pi · /model">
       <SidebarMain />
@@ -61,8 +62,7 @@ export function ModelPicker() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontFamily: F.mono, fontSize: 11, color: T.pi }}>/model</span>
             <span style={{ fontFamily: F.sans, fontSize: 15, color: T.text, fontWeight: 500 }}>switch model</span>
-            <Pill>15 providers</Pill>
-            <Pill>247 models</Pill>
+            <Pill>{models.length} models</Pill>
             <div style={{ flex: 1 }} />
             <Kbd>Ctrl+L</Kbd>
             <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textMuted }}>open</span>
@@ -96,7 +96,7 @@ export function ModelPicker() {
           }}>
             <SectionLabel>providers</SectionLabel>
             <ProviderTab name="★ favorites" count="6" />
-            <ProviderTab name="all" count="247" active />
+            <ProviderTab name="all" count={String(models.length)} active />
             <div style={{ height: 8 }} />
             <ProviderTab name="Anthropic" count="9" />
             <ProviderTab name="OpenAI" count="14" />
@@ -108,13 +108,9 @@ export function ModelPicker() {
             <ProviderTab name="Cerebras" count="4" />
             <ProviderTab name="xAI" count="3" />
             <ProviderTab name="Hugging Face" count="18" />
-            <ProviderTab name="Kimi" count="2" />
-            <ProviderTab name="MiniMax" count="3" />
-            <ProviderTab name="OpenRouter" count="200+" />
             <ProviderTab name="Ollama" count="12" />
             <div style={{ height: 8 }} />
             <SectionLabel>custom</SectionLabel>
-            <ProviderTab name="local-llama" count="2" />
             <ProviderTab name="+ add provider" />
           </div>
 
@@ -132,22 +128,13 @@ export function ModelPicker() {
             </div>
 
             <div style={{ flex: 1, overflow: 'auto' }}>
-              <ModelRow provider="anthropic" name="claude-opus-4-1" ctx="200k" price="$15 / $75" fav status="ready" tags={['vision', 'tool']} />
-              <ModelRow provider="anthropic" name="claude-sonnet-4-5" ctx="200k" price="$3 / $15" fav current status="ready" tags={['vision', 'tool']} />
-              <ModelRow provider="anthropic" name="claude-haiku-4-5" ctx="200k" price="$1 / $5" fav status="ready" tags={['vision', 'tool', 'fast']} />
-              <ModelRow provider="openai" name="gpt-5" ctx="400k" price="$5 / $20" fav status="ready" tags={['vision', 'tool']} />
-              <ModelRow provider="openai" name="gpt-5-mini" ctx="400k" price="$0.5 / $2" status="ready" tags={['vision', 'tool']} />
-              <ModelRow provider="openai" name="o4" ctx="200k" price="$15 / $60" fav status="ready" tags={['reasoning']} />
-              <ModelRow provider="google" name="gemini-2.5-pro" ctx="2M" price="$2 / $8" fav status="ready" tags={['vision', 'audio']} />
-              <ModelRow provider="google" name="gemini-2.5-flash" ctx="1M" price="$0.3 / $1" status="ready" />
-              <ModelRow provider="groq" name="llama-4-405b" ctx="128k" price="$2 / $4" status="rate" tags={['fast']} />
-              <ModelRow provider="cerebras" name="qwen-3-coder-480b" ctx="128k" price="$1 / $3" status="ready" tags={['fast']} />
-              <ModelRow provider="xai" name="grok-4" ctx="256k" price="$3 / $12" status="ready" tags={['reasoning']} />
-              <ModelRow provider="openrouter" name="auto" ctx="—" price="passthrough" status="ready" tags={['router']} />
-              <ModelRow provider="ollama" name="llama-3.3:70b" ctx="128k" price="local · free" status="ready" tags={['local']} />
-              <ModelRow provider="ollama" name="qwen2.5-coder:32b" ctx="128k" price="local · free" status="ready" tags={['local', 'fast']} />
-              <ModelRow provider="huggingface" name="kimi-k2" ctx="200k" price="$1 / $4" status="none" />
-              <ModelRow provider="local-llama" name="my-finetune-v3" ctx="32k" price="local" status="ready" tags={['custom']} />
+              {models.map((m) => (
+                <ModelRow
+                  key={`${m.provider}/${m.name}`}
+                  {...m}
+                  onClick={() => setCurrentModel(m.name)}
+                />
+              ))}
             </div>
 
             <div style={{

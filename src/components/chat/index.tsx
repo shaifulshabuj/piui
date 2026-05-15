@@ -1,3 +1,4 @@
+import React from 'react';
 import { T, F } from '../../tokens';
 import { Pi, Pill, Kbd } from '../primitives';
 
@@ -139,21 +140,51 @@ export function SteeringQueue() {
   );
 }
 
-export function Composer({ onCommandPalette }: { onCommandPalette?: () => void }) {
+export function Composer({
+  onCommandPalette,
+  onSubmit,
+  usage,
+}: {
+  onCommandPalette?: () => void;
+  onSubmit?: (text: string) => void;
+  usage?: { tokens: number; cost: number };
+}) {
+  const [text, setText] = React.useState('');
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const trimmed = text.trim();
+      if (trimmed && onSubmit) {
+        onSubmit(trimmed);
+        setText('');
+      }
+    }
+    if (e.key === '/' && text === '' && onCommandPalette) {
+      e.preventDefault();
+      onCommandPalette();
+    }
+  };
+
   return (
     <div style={{ padding: '10px 24px 14px', borderTop: `1px solid ${T.border}`, background: T.bg }}>
       <div style={{
         border: `1px solid ${T.borderHi}`, borderRadius: 8,
         background: T.bgInput, boxShadow: `0 0 0 3px ${T.piBg}`,
       }}>
-        <div style={{ padding: '10px 12px 6px', fontFamily: F.mono, fontSize: 13.5, color: T.text, lineHeight: 1.5 }}>
-          Add a snapshot test against the v0 fixture too
-          <span style={{
-            display: 'inline-block', width: 7, height: 14, background: T.pi,
-            marginLeft: 1, verticalAlign: 'text-bottom',
-            animation: 'pi-blink 1s steps(2) infinite',
-          }} />
-        </div>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask pi something… (↵ send · Shift+↵ newline · / commands)"
+          rows={text.split('\n').length || 1}
+          style={{
+            display: 'block', width: '100%', padding: '10px 12px 6px',
+            fontFamily: F.mono, fontSize: 13.5, color: T.text, lineHeight: 1.5,
+            background: 'transparent', border: 'none', outline: 'none', resize: 'none',
+            boxSizing: 'border-box', minHeight: 38,
+          }}
+        />
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '6px 10px', borderTop: `1px solid ${T.borderDim}`,
@@ -161,11 +192,16 @@ export function Composer({ onCommandPalette }: { onCommandPalette?: () => void }
           <Pill color={T.tool} bg={T.toolBg} border="rgba(199,155,214,0.25)">/test-context</Pill>
           <Pill color={T.info} bg={T.infoBg} border="rgba(122,166,216,0.25)">@src/session/migrate.ts</Pill>
           <div style={{ flex: 1 }} />
+          {usage && (
+            <span style={{ fontFamily: F.mono, fontSize: 10, color: T.textMuted }}>
+              {(usage.tokens / 1000).toFixed(1)}k tok · ${usage.cost.toFixed(3)}
+            </span>
+          )}
           <span
             style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textMuted, cursor: 'pointer' }}
             onClick={onCommandPalette}
           >
-            <Kbd>↵</Kbd> steer · <Kbd>Alt+↵</Kbd> queue · <Kbd>/</Kbd> commands
+            <Kbd>↵</Kbd> send · <Kbd>Alt+↵</Kbd> queue · <Kbd>/</Kbd> commands
           </span>
         </div>
       </div>

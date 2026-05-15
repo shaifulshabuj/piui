@@ -1,5 +1,8 @@
+import { useEffect } from 'react';
 import './index.css';
 import { NavProvider, useNav } from './context/NavContext';
+import type { Screen, Overlay } from './types';
+import { setupEventHandler } from './lib/eventHandler';
 import { MainChat } from './screens/MainChat';
 import { Onboarding } from './screens/Onboarding';
 import { SessionTree } from './screens/SessionTree';
@@ -16,7 +19,22 @@ import { CommandPalette } from './screens/CommandPalette';
 import { PermissionPrompt } from './screens/PermissionPrompt';
 
 function AppRouter() {
-  const { screen, overlay } = useNav();
+  const { screen, overlay, navigate, openOverlay } = useNav();
+
+  useEffect(() => {
+    // Wire pi event stream to stores (idempotent, returns cleanup)
+    const cleanupEvents = setupEventHandler();
+
+    // Handle navigation commands sent from the Electron app menu
+    const cleanupNav = window.pi?.onNavigate((s) => navigate(s as Screen));
+    const cleanupOverlay = window.pi?.onOverlay((o) => openOverlay(o as Overlay));
+
+    return () => {
+      cleanupEvents?.();
+      cleanupNav?.();
+      cleanupOverlay?.();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const screens: Record<string, React.ReactNode> = {
     chat: <MainChat />,
