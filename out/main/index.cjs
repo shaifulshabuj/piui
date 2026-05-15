@@ -22,14 +22,14 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 //#endregion
 let electron = require("electron");
 let path = require("path");
-path = __toESM(path, 1);
+path = __toESM(path);
 let child_process = require("child_process");
 let os = require("os");
-os = __toESM(os, 1);
+os = __toESM(os);
 let fs = require("fs");
-fs = __toESM(fs, 1);
+fs = __toESM(fs);
 let fs_promises = require("fs/promises");
-fs_promises = __toESM(fs_promises, 1);
+fs_promises = __toESM(fs_promises);
 //#region electron/piProcess.ts
 function findPiBinary() {
 	const home = os.homedir();

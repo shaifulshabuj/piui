@@ -9882,7 +9882,7 @@ var require_client = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 }));
 //#endregion
 //#region src/index.css
-var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
+var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_client = require_client();
 //#endregion
 //#region node_modules/react/cjs/react-jsx-runtime.production.js
