@@ -23,11 +23,11 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 let electron = require("electron");
 let path = require("path");
 path = __toESM(path);
+let fs = require("fs");
+fs = __toESM(fs);
 let child_process = require("child_process");
 let os = require("os");
 os = __toESM(os);
-let fs = require("fs");
-fs = __toESM(fs);
 let fs_promises = require("fs/promises");
 fs_promises = __toESM(fs_promises);
 //#region electron/piProcess.ts
@@ -338,6 +338,15 @@ function buildMenu(mainWindow) {
 //#region electron/main.ts
 electron.app.setName("pi");
 var mainWindow = null;
+/** electron-vite dev outputs index.js, prod outputs index.cjs — handle both */
+function resolvePreload() {
+	const cjs = (0, path.join)(__dirname, "../preload/index.cjs");
+	const js = (0, path.join)(__dirname, "../preload/index.js");
+	if ((0, fs.existsSync)(cjs)) return cjs;
+	if ((0, fs.existsSync)(js)) return js;
+	console.warn("[pi] preload not found at expected paths:", cjs, js);
+	return cjs;
+}
 async function createWindow() {
 	mainWindow = new electron.BrowserWindow({
 		width: 1280,
@@ -352,18 +361,22 @@ async function createWindow() {
 		backgroundColor: "#0e0d0b",
 		show: false,
 		webPreferences: {
-			preload: (0, path.join)(__dirname, "../preload/index.cjs"),
+			preload: resolvePreload(),
 			contextIsolation: true,
 			nodeIntegration: false
 		}
+	});
+	mainWindow.webContents.on("did-fail-load", (_e, code, desc) => {
+		console.error("[pi] renderer failed to load:", code, desc);
 	});
 	if (process.env["ELECTRON_RENDERER_URL"]) {
 		mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
 		mainWindow.webContents.openDevTools();
 	} else mainWindow.loadFile((0, path.join)(__dirname, "../renderer/index.html"));
-	mainWindow.once("ready-to-show", () => {
-		mainWindow.show();
-	});
+	mainWindow.once("ready-to-show", () => mainWindow.show());
+	setTimeout(() => {
+		if (mainWindow && !mainWindow.isVisible()) mainWindow.show();
+	}, 4e3);
 	mainWindow.webContents.setWindowOpenHandler(({ url }) => {
 		if (url.startsWith("http")) electron.shell.openExternal(url);
 		return { action: "deny" };

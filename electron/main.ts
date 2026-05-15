@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
+import { existsSync } from 'fs'
 import { piManager } from './piProcess'
 import { registerIpcHandlers } from './ipc'
 import { buildMenu } from './menu'
@@ -7,6 +8,16 @@ import { buildMenu } from './menu'
 app.setName('pi')
 
 let mainWindow: BrowserWindow | null = null
+
+/** electron-vite dev outputs index.js, prod outputs index.cjs — handle both */
+function resolvePreload(): string {
+  const cjs = join(__dirname, '../preload/index.cjs')
+  const js  = join(__dirname, '../preload/index.js')
+  if (existsSync(cjs)) return cjs
+  if (existsSync(js))  return js
+  console.warn('[pi] preload not found at expected paths:', cjs, js)
+  return cjs // will fail gracefully with Electron's preload error
+}
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
@@ -19,25 +30,27 @@ async function createWindow() {
     backgroundColor: '#0e0d0b',
     show: false,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.cjs'),
+      preload: resolvePreload(),
       contextIsolation: true,
       nodeIntegration: false,
     },
   })
 
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
+    console.error('[pi] renderer failed to load:', code, desc)
+  })
+
   if (process.env['ELECTRON_RENDERER_URL']) {
-    // Dev mode: load from Vite dev server
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
     mainWindow.webContents.openDevTools()
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow!.show()
-  })
+  // Show window when ready; fallback after 4 s in case ready-to-show is missed
+  mainWindow.once('ready-to-show', () => mainWindow!.show())
+  setTimeout(() => { if (mainWindow && !mainWindow.isVisible()) mainWindow.show() }, 4000)
 
-  // Open external links in default browser instead of Electron
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http')) shell.openExternal(url)
     return { action: 'deny' }
@@ -46,9 +59,7 @@ async function createWindow() {
   piManager.setWindow(mainWindow)
   buildMenu(mainWindow)
 
-  mainWindow.on('closed', () => {
-    mainWindow = null
-  })
+  mainWindow.on('closed', () => { mainWindow = null })
 }
 
 app.whenReady().then(async () => {
