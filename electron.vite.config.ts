@@ -22,11 +22,21 @@ export default defineConfig({
   },
   renderer: {
     root: '.',
+    server: { port: 5616 },
     build: {
       rollupOptions: { input: './index.html' },
       outDir: 'out/renderer',
       emptyOutDir: true,
     },
-    plugins: [react()],
+    plugins: [
+      react(),
+      // Strip `crossorigin` from built HTML — file:// protocol in Electron
+      // doesn't support CORS headers, blocking module scripts and stylesheets.
+      {
+        name: 'remove-crossorigin',
+        enforce: 'post' as const,
+        transformIndexHtml: (html: string) => html.replace(/ crossorigin/g, ''),
+      },
+    ],
   },
 })
