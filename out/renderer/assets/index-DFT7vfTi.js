@@ -12198,7 +12198,7 @@ function SessionTree() {
 	const [activeFilter, setActiveFilter] = (0, import_react.useState)("all");
 	const filtered = TREE_NODES.filter((n) => {
 		const matchFilter = activeFilter === "all" ? true : activeFilter === "user" ? n.role === "user" : activeFilter === "assistant" ? n.role === "pi" : activeFilter === "bookmarked" ? !!n.bookmark : true;
-		const matchQuery = !query || n.text.toLowerCase().includes(query.toLowerCase());
+		const matchQuery = !query || n.text.toLowerCase().includes(query.toLowerCase()) || n.branch && n.branch.toLowerCase().includes(query.toLowerCase()) || n.bookmark && n.bookmark.toLowerCase().includes(query.toLowerCase());
 		return matchFilter && matchQuery;
 	});
 	const FILTERS = [

@@ -82,7 +82,9 @@ export function SessionTree() {
       : activeFilter === 'assistant' ? n.role === 'pi'
       : activeFilter === 'bookmarked' ? !!n.bookmark
       : true;
-    const matchQuery = !query || n.text.toLowerCase().includes(query.toLowerCase());
+    const matchQuery = !query || n.text.toLowerCase().includes(query.toLowerCase())
+      || (n.branch && n.branch.toLowerCase().includes(query.toLowerCase()))
+      || (n.bookmark && n.bookmark.toLowerCase().includes(query.toLowerCase()));
     return matchFilter && matchQuery;
   });
 

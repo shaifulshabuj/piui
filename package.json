@@ -6,7 +6,10 @@
   "main": "out/main/index.cjs",
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:renderer": "vite --port 5616",
     "dev:web": "vite",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
     "build": "electron-vite build",
     "build:web": "tsc -b && vite build",
     "build:app": "electron-vite build && electron-builder",
@@ -43,6 +46,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.60.0",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -54,6 +58,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "playwright": "^1.60.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12"
