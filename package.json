@@ -11,7 +11,8 @@
     "build:web": "tsc -b && vite build",
     "build:app": "electron-vite build && electron-builder",
     "lint": "eslint .",
-    "preview": "electron-vite preview"
+    "preview": "electron-vite preview",
+    "start": "electron-vite build && electron ."
   },
   "dependencies": {
     "react": "^19.2.6",
