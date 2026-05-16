@@ -92,6 +92,7 @@ export function registerIpcHandlers() {
   })
 
   // App
+  ipcMain.handle('pi:abort', async () => { piManager.abort() })
   ipcMain.handle('app:version', async () => app.getVersion())
   ipcMain.handle('app:cwd', async () => process.cwd())
   ipcMain.handle('app:quit', async () => app.quit())

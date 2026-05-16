@@ -1,12 +1,7 @@
+import { useState } from 'react';
 import { T, F } from '../tokens';
 import { Pill, Btn, Dot, SectionLabel, Kbd } from '../components/primitives';
 import { PiWindow, SidebarMain } from '../components/shell';
-
-const QUEUE = [
-  { id: 'q1', text: 'after the JWT migration, also update the session store to use redis', done: false },
-  { id: 'q2', text: 'then add a /me endpoint that returns current user from token', done: false },
-  { id: 'q3', text: 'unit tests for the token verification edge cases', done: false },
-];
 
 const TRANSCRIPT = [
   { turn: 'user', text: 'refactor the auth module to use JWT' },
@@ -17,6 +12,33 @@ const TRANSCRIPT = [
 ];
 
 export function Steering() {
+  const [steerText, setSteerText] = useState('');
+  const [queue, setQueue] = useState([
+    { id: 'q1', text: 'after the JWT migration, also update the session store to use redis' },
+    { id: 'q2', text: 'then add a /me endpoint that returns current user from token' },
+    { id: 'q3', text: 'unit tests for the token verification edge cases' },
+  ]);
+  const [newQueueText, setNewQueueText] = useState('');
+  const [addingToQueue, setAddingToQueue] = useState(false);
+
+  const handleAbort = () => {
+    window.pi?.abort();
+  };
+
+  const handleSteer = () => {
+    if (!steerText.trim()) return;
+    window.pi?.send({ type: 'steer', message: steerText.trim() });
+    setSteerText('');
+  };
+
+  const handleAddToQueue = () => {
+    if (!newQueueText.trim()) return;
+    setQueue((q) => [...q, { id: `q-${Date.now()}`, text: newQueueText.trim() }]);
+    window.pi?.send({ type: 'queue_add', message: newQueueText.trim() });
+    setNewQueueText('');
+    setAddingToQueue(false);
+  };
+
   return (
     <PiWindow title="pi · steering">
       <SidebarMain />
@@ -27,7 +49,7 @@ export function Steering() {
           <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textMuted }}>JWT auth refactor · tool call 14 of ~22</span>
           <div style={{ flex: 1 }} />
           <Kbd>Ctrl+C</Kbd>
-          <Btn variant="danger" icon="■">Abort</Btn>
+          <Btn variant="danger" icon="■" onClick={handleAbort}>Abort</Btn>
         </div>
 
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
@@ -97,8 +119,17 @@ export function Steering() {
                 borderRadius: 5, border: `1px solid ${T.borderHi}`, background: T.bgInput,
               }}>
                 <span style={{ fontFamily: F.mono, fontSize: 11, color: T.pi }}>steer:</span>
-                <span style={{ fontFamily: F.mono, fontSize: 12.5, color: T.textMuted, flex: 1 }}>also update session store to Redis…</span>
-                <Kbd>↵</Kbd>
+                <input
+                  value={steerText}
+                  onChange={(e) => setSteerText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSteer(); }}
+                  placeholder="inject a message into the next turn…"
+                  style={{
+                    flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                    fontFamily: F.mono, fontSize: 12.5, color: T.text,
+                  }}
+                />
+                <Kbd onClick={handleSteer}>↵</Kbd>
               </div>
               <div style={{ marginTop: 6, fontFamily: F.mono, fontSize: 10, color: T.textFaint }}>
                 Steering messages are injected into the next assistant turn without starting a new session.
@@ -109,14 +140,14 @@ export function Steering() {
           <div style={{ width: 270, flexShrink: 0, borderLeft: `1px solid ${T.border}`, background: T.bgPanel, overflow: 'auto' }}>
             <div style={{ padding: '10px 14px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontFamily: F.mono, fontSize: 12, color: T.text }}>Queue</span>
-              <Pill color={T.pi} bg={T.piBg} border={T.piBorder}>{QUEUE.length}</Pill>
+              <Pill color={T.pi} bg={T.piBg} border={T.piBorder}>{queue.length}</Pill>
               <div style={{ flex: 1 }} />
-              <Btn variant="ghost" icon="+">Add</Btn>
+              <Btn variant="ghost" icon="+" onClick={() => setAddingToQueue(true)}>Add</Btn>
             </div>
 
             <div style={{ padding: '10px 12px' }}>
               <SectionLabel>pending after current task</SectionLabel>
-              {QUEUE.map((item, i) => (
+              {queue.map((item, i) => (
                 <div key={item.id} style={{
                   display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px',
                   borderRadius: 4, marginBottom: 4,
@@ -124,12 +155,30 @@ export function Steering() {
                 }}>
                   <span style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textFaint, paddingTop: 2 }}>{i + 1}.</span>
                   <span style={{ fontFamily: F.sans, fontSize: 12, color: T.text, flex: 1, lineHeight: 1.5 }}>{item.text}</span>
-                  <Btn variant="ghost" icon="✕" />
+                  <Btn variant="ghost" icon="✕" onClick={() => setQueue((q) => q.filter((x) => x.id !== item.id))} />
                 </div>
               ))}
-              <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 4, border: `1px dashed ${T.border}`, background: 'transparent', cursor: 'pointer' }}>
-                <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textFaint }}>+ add to queue</span>
-              </div>
+              {addingToQueue ? (
+                <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
+                  <input
+                    autoFocus
+                    value={newQueueText}
+                    onChange={(e) => setNewQueueText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddToQueue(); if (e.key === 'Escape') setAddingToQueue(false); }}
+                    placeholder="next task…"
+                    style={{
+                      flex: 1, padding: '6px 8px', borderRadius: 4, background: T.bgInput,
+                      border: `1px solid ${T.borderHi}`, outline: 'none',
+                      fontFamily: F.mono, fontSize: 11, color: T.text,
+                    }}
+                  />
+                  <Btn variant="primary" onClick={handleAddToQueue}>Add</Btn>
+                </div>
+              ) : (
+                <div onClick={() => setAddingToQueue(true)} style={{ marginTop: 10, padding: '8px 10px', borderRadius: 4, border: `1px dashed ${T.border}`, background: 'transparent', cursor: 'pointer' }}>
+                  <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textFaint }}>+ add to queue</span>
+                </div>
+              )}
             </div>
 
             <div style={{ padding: '10px 12px', borderTop: `1px solid ${T.border}` }}>

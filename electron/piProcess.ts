@@ -147,6 +147,11 @@ export class PiProcessManager {
     }
   }
 
+  abort(): void {
+    // Send SIGINT (Ctrl+C) so pi can finish any in-progress file write before exiting
+    this.proc?.kill('SIGINT')
+  }
+
   stop() {
     this.available = false
     this.proc?.kill('SIGTERM')

@@ -1,7 +1,9 @@
+import { useState, useEffect } from 'react';
 import { T, F } from '../tokens';
 import { Pill, Btn, Kbd, SectionLabel } from '../components/primitives';
 import { PiWindow, SidebarMain } from '../components/shell';
 import { useModelStore } from '../store/modelStore';
+
 import type { Model } from '../types';
 
 function ModelRow({ provider, name, ctx, price, fav, current, status, tags, onClick }: Model & { onClick?: () => void }) {
@@ -34,9 +36,9 @@ function ModelRow({ provider, name, ctx, price, fav, current, status, tags, onCl
   );
 }
 
-function ProviderTab({ name, count, active }: { name: string; count?: string; active?: boolean }) {
+function ProviderTab({ name, count, active, onClick }: { name: string; count?: string; active?: boolean; onClick?: () => void }) {
   return (
-    <div style={{
+    <div onClick={onClick} style={{
       padding: '8px 12px', borderRadius: 5,
       fontFamily: F.mono, fontSize: 11.5,
       color: active ? T.text : T.textDim,
@@ -52,7 +54,24 @@ function ProviderTab({ name, count, active }: { name: string; count?: string; ac
 }
 
 export function ModelPicker() {
-  const { models, setCurrentModel } = useModelStore();
+  const { models, setCurrentModel, loadModels } = useModelStore();
+  const [query, setQuery] = useState('');
+  const [activeProvider, setActiveProvider] = useState('all');
+
+  useEffect(() => { loadModels(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const providers = ['all', '★ favorites', ...Array.from(new Set(models.map((m) => m.provider)))];
+
+  const filtered = models.filter((m) => {
+    const matchProvider = activeProvider === 'all'
+      ? true
+      : activeProvider === '★ favorites'
+      ? !!m.fav
+      : m.provider === activeProvider;
+    const q = query.toLowerCase();
+    const matchQuery = !q || m.name.toLowerCase().includes(q) || m.provider.toLowerCase().includes(q);
+    return matchProvider && matchQuery;
+  });
 
   return (
     <PiWindow title="pi · /model">
@@ -76,15 +95,17 @@ export function ModelPicker() {
             boxShadow: `0 0 0 3px ${T.piBg}`,
           }}>
             <span style={{ color: T.pi, fontFamily: F.mono }}>⌕</span>
-            <span style={{ fontFamily: F.mono, fontSize: 13, color: T.text, flex: 1 }}>
-              opus<span style={{
-                display: 'inline-block', width: 7, height: 14, background: T.pi,
-                marginLeft: 1, verticalAlign: 'text-bottom',
-                animation: 'pi-blink 1s steps(2) infinite',
-              }} />
-            </span>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="search models…"
+              style={{
+                flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                fontFamily: F.mono, fontSize: 13, color: T.text,
+              }}
+            />
             <span style={{ fontFamily: F.mono, fontSize: 10, color: T.textMuted }}>
-              3 matches · ↑↓ navigate · ↵ select · esc cancel
+              {filtered.length} matches · ↑↓ navigate · ↵ select · esc cancel
             </span>
           </div>
         </div>
@@ -95,23 +116,10 @@ export function ModelPicker() {
             borderRight: `1px solid ${T.border}`, background: T.bgPanel, overflow: 'auto',
           }}>
             <SectionLabel>providers</SectionLabel>
-            <ProviderTab name="★ favorites" count="6" />
-            <ProviderTab name="all" count={String(models.length)} active />
-            <div style={{ height: 8 }} />
-            <ProviderTab name="Anthropic" count="9" />
-            <ProviderTab name="OpenAI" count="14" />
-            <ProviderTab name="Google" count="11" />
-            <ProviderTab name="Azure" count="14" />
-            <ProviderTab name="Bedrock" count="22" />
-            <ProviderTab name="Mistral" count="9" />
-            <ProviderTab name="Groq" count="6" />
-            <ProviderTab name="Cerebras" count="4" />
-            <ProviderTab name="xAI" count="3" />
-            <ProviderTab name="Hugging Face" count="18" />
-            <ProviderTab name="Ollama" count="12" />
-            <div style={{ height: 8 }} />
-            <SectionLabel>custom</SectionLabel>
-            <ProviderTab name="+ add provider" />
+            {providers.map((p) => {
+              const cnt = p === 'all' ? models.length : p === '★ favorites' ? models.filter((m) => m.fav).length : models.filter((m) => m.provider === p).length;
+              return <ProviderTab key={p} name={p} count={String(cnt)} active={activeProvider === p} onClick={() => setActiveProvider(p)} />;
+            })}
           </div>
 
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: T.bg }}>
@@ -128,7 +136,7 @@ export function ModelPicker() {
             </div>
 
             <div style={{ flex: 1, overflow: 'auto' }}>
-              {models.map((m) => (
+              {filtered.map((m) => (
                 <ModelRow
                   key={`${m.provider}/${m.name}`}
                   {...m}

@@ -1,10 +1,11 @@
+import { useState } from 'react';
 import { T, F } from '../tokens';
 import { Pill, Btn, Kbd, Dot } from '../components/primitives';
 import { PiWindow, SidebarMain } from '../components/shell';
 
-function FilterChip({ label, count, active, color }: { label: string; count: string; active?: boolean; color?: string }) {
+function FilterChip({ label, count, active, color, onClick }: { label: string; count: string; active?: boolean; color?: string; onClick?: () => void }) {
   return (
-    <div style={{
+    <div onClick={onClick} style={{
       display: 'inline-flex', alignItems: 'center', gap: 6,
       padding: '4px 9px', borderRadius: 4,
       border: `1px solid ${active ? (color || T.pi) : T.border}`,
@@ -59,7 +60,41 @@ function TreeNode({ depth = 0, glyph, role, text, branch, bookmark, current, dim
   );
 }
 
+const TREE_NODES = [
+  { depth: 0, glyph: '1', role: 'user', time: '14:02', text: 'Look at SessionStore.loadSession — old sessions crash on open. Migration code is in migrate.ts.' },
+  { depth: 0, glyph: '1', role: 'pi', time: '14:02', tokens: '1.4k', text: 'Reading store.ts and migrate.ts. The crash is from an undefined branches[] field on v0 schemas — migrator handles it but isn\'t wired into the load path.' },
+  { depth: 1, glyph: '2', role: 'user', branch: 'hotfix', time: '14:04', text: 'Try the smallest possible fix first: just call migrate() inside loadSession.' },
+  { depth: 2, glyph: '3', role: 'pi', time: '14:04', tokens: '2.1k', dim: true, text: 'Wrapped loadSession in migrate(). 4/6 tests pass. The v0→v2 migration drops bookmarks because schema-v1 didn\'t have them.' },
+  { depth: 1, glyph: '2', role: 'user', branch: 'proper-fix', bookmark: 'design v2 store', time: '14:08', text: 'Branch from #1 — let\'s do this properly. Add SessionNotFoundError, run migration via the typed path, and write migration tests against the v0 fixtures.' },
+  { depth: 2, glyph: '3', role: 'pi', time: '14:08', tokens: '3.8k', text: 'Plan: SessionNotFoundError type → loadSession returns Result<Session, SessionNotFoundError | MigrationError> → migrator runs inside loadSession → fixture tests for v0/v1/v2 round-trips.' },
+  { depth: 2, glyph: '4', role: 'user', time: '14:11', text: 'Go ahead. Also: write a snapshot test against the v0 fixture so we don\'t regress.' },
+  { depth: 3, glyph: '5', role: 'pi', time: '14:11', tokens: '5.2k', current: true, text: 'Working. 5 files changed, 11/12 tests passing. The last one is the snapshot — diffing now.' },
+  { depth: 2, glyph: '6', role: 'user', branch: 'ux-experiment', time: '14:09', dim: true, text: '(parked) Try the alternate API where loadSession is async-iterator that yields per-message — might be simpler for the resume case.' },
+];
+
 export function SessionTree() {
+  const [query, setQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState('all');
+
+  const filtered = TREE_NODES.filter((n) => {
+    const matchFilter = activeFilter === 'all' ? true
+      : activeFilter === 'user' ? n.role === 'user'
+      : activeFilter === 'assistant' ? n.role === 'pi'
+      : activeFilter === 'bookmarked' ? !!n.bookmark
+      : true;
+    const matchQuery = !query || n.text.toLowerCase().includes(query.toLowerCase());
+    return matchFilter && matchQuery;
+  });
+
+  const FILTERS = [
+    { label: 'all', count: '64', color: undefined },
+    { label: 'user', count: '14', color: T.pi },
+    { label: 'assistant', count: '14', color: T.tool },
+    { label: 'tool calls', count: '31', color: T.info },
+    { label: 'errors', count: '2', color: T.err },
+    { label: 'bookmarked', count: '2', color: T.warn },
+  ];
+
   return (
     <PiWindow title="pi · /tree · pi ui design system">
       <SidebarMain />
@@ -72,47 +107,41 @@ export function SessionTree() {
             <Pill color={T.info} bg={T.infoBg} border="rgba(122,166,216,0.25)">3 branches</Pill>
             <Pill color={T.warn} bg={T.warnBg} border="rgba(224,178,87,0.25)">2 bookmarks</Pill>
             <div style={{ flex: 1 }} />
-            <Btn variant="ghost" icon="↗">Share</Btn>
+            <Btn variant="ghost" icon="↗" onClick={() => navigator.clipboard?.writeText(window.location.href).catch(() => {})}>Share</Btn>
             <Btn variant="ghost" icon="⇣">Export</Btn>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontFamily: F.mono, fontSize: 10, color: T.textFaint, textTransform: 'uppercase', letterSpacing: 0.8, marginRight: 6 }}>filter</span>
-            <FilterChip label="all" count="64" active />
-            <FilterChip label="user" count="14" color={T.pi} />
-            <FilterChip label="assistant" count="14" color={T.tool} />
-            <FilterChip label="tool calls" count="31" color={T.info} />
-            <FilterChip label="errors" count="2" color={T.err} />
-            <FilterChip label="bookmarked" count="2" color={T.warn} />
+            {FILTERS.map((f) => (
+              <FilterChip key={f.label} label={f.label} count={f.count} color={f.color} active={activeFilter === f.label} onClick={() => setActiveFilter(f.label)} />
+            ))}
             <div style={{ flex: 1 }} />
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', borderRadius: 4,
-              border: `1px solid ${T.border}`, background: T.bgInput,
-              fontFamily: F.mono, fontSize: 11, color: T.textMuted, width: 220,
+              border: `1px solid ${T.border}`, background: T.bgInput, width: 220,
             }}>
-              <span>⌕</span><span>search messages…</span>
+              <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textMuted }}>⌕</span>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="search messages…"
+                style={{
+                  flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                  fontFamily: F.mono, fontSize: 11, color: T.text,
+                }}
+              />
             </div>
           </div>
         </div>
 
         <div style={{ flex: 1, overflow: 'auto', padding: '12px 24px', background: T.bg }}>
-          <TreeNode depth={0} glyph="1" role="user" time="14:02"
-            text="Look at SessionStore.loadSession — old sessions crash on open. Migration code is in migrate.ts." />
-          <TreeNode depth={0} glyph="1" role="pi" time="14:02" tokens="1.4k"
-            text="Reading store.ts and migrate.ts. The crash is from an undefined branches[] field on v0 schemas — migrator handles it but isn't wired into the load path." />
-          <TreeNode depth={1} glyph="2" role="user" branch="hotfix" time="14:04"
-            text="Try the smallest possible fix first: just call migrate() inside loadSession." />
-          <TreeNode depth={2} glyph="3" role="pi" time="14:04" tokens="2.1k" dim
-            text="Wrapped loadSession in migrate(). 4/6 tests pass. The v0→v2 migration drops bookmarks because schema-v1 didn't have them." />
-          <TreeNode depth={1} glyph="2" role="user" branch="proper-fix" bookmark="design v2 store" time="14:08"
-            text="Branch from #1 — let's do this properly. Add SessionNotFoundError, run migration via the typed path, and write migration tests against the v0 fixtures." />
-          <TreeNode depth={2} glyph="3" role="pi" time="14:08" tokens="3.8k"
-            text="Plan: SessionNotFoundError type → loadSession returns Result<Session, SessionNotFoundError | MigrationError> → migrator runs inside loadSession → fixture tests for v0/v1/v2 round-trips." />
-          <TreeNode depth={2} glyph="4" role="user" time="14:11"
-            text="Go ahead. Also: write a snapshot test against the v0 fixture so we don't regress." />
-          <TreeNode depth={3} glyph="5" role="pi" time="14:11" tokens="5.2k" current
-            text="Working. 5 files changed, 11/12 tests passing. The last one is the snapshot — diffing now." />
-          <TreeNode depth={2} glyph="6" role="user" branch="ux-experiment" time="14:09" dim
-            text="(parked) Try the alternate API where loadSession is async-iterator that yields per-message — might be simpler for the resume case." />
+          {filtered.length === 0 && (
+            <div style={{ fontFamily: F.mono, fontSize: 12, color: T.textFaint, padding: '20px 0' }}>No messages match your filter.</div>
+          )}
+          {filtered.map((n, i) => (
+            <TreeNode key={i} depth={n.depth} glyph={n.glyph} role={n.role} time={n.time}
+              text={n.text} branch={n.branch} bookmark={n.bookmark} current={n.current} dim={n.dim} tokens={n.tokens} />
+          ))}
         </div>
 
         <div style={{

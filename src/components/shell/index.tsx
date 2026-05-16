@@ -3,6 +3,8 @@ import { T, F } from '../../tokens';
 import { Pi, Dot, NavItem, SectionLabel, Btn } from '../primitives';
 import { useNav } from '../../context/NavContext';
 import { useSessionStore } from '../../store/sessionStore';
+import { useModelStore } from '../../store/modelStore';
+import { useChatStore } from '../../store/chatStore';
 import type { Session } from '../../types';
 
 export function PiTitlebar({ title }: { title?: string }) {
@@ -47,6 +49,10 @@ interface PiStatusbarProps {
 }
 
 export function PiStatusbar({ left, right }: PiStatusbarProps) {
+  const { currentModel } = useModelStore();
+  const { usage, isStreaming } = useChatStore();
+  const tokStr = usage.tokens > 0 ? `${(usage.tokens / 1000).toFixed(1)}k tok` : '';
+  const costStr = usage.cost > 0 ? `$${usage.cost.toFixed(3)}` : '';
   return (
     <div style={{
       height: 24, flexShrink: 0, display: 'flex', alignItems: 'center',
@@ -58,10 +64,10 @@ export function PiStatusbar({ left, right }: PiStatusbarProps) {
         {left ?? (
           <>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <Dot color={T.ok} size={5} /> ready
+              <Dot color={isStreaming ? T.pi : T.ok} size={5} animated={isStreaming} />
+              {isStreaming ? 'streaming' : 'ready'}
             </span>
-            <span>~/code/pi-ui</span>
-            <span>main</span>
+            <span>{typeof process !== 'undefined' ? '~' : '~'}/code/pi-ui</span>
           </>
         )}
       </div>
@@ -69,9 +75,9 @@ export function PiStatusbar({ left, right }: PiStatusbarProps) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         {right ?? (
           <>
-            <span>claude-sonnet-4-5</span>
-            <span>14.2k / 200k</span>
-            <span>$0.084</span>
+            <span style={{ color: T.pi }}>{currentModel}</span>
+            {tokStr && <span>{tokStr}</span>}
+            {costStr && <span>{costStr}</span>}
           </>
         )}
       </div>

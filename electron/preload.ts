@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('pi', {
 
   send: (cmd: object) => ipcRenderer.invoke('pi:send', cmd),
 
+  abort: () => ipcRenderer.invoke('pi:abort'),
+
   onEvent: (cb: (event: object) => void) => {
     const handler = (_: Electron.IpcRendererEvent, event: object) => cb(event)
     ipcRenderer.on('pi:event', handler)

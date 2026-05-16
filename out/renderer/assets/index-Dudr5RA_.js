@@ -10706,6 +10706,10 @@ function PiTitlebar({ title }) {
 	});
 }
 function PiStatusbar({ left, right }) {
+	const { currentModel } = useModelStore();
+	const { usage, isStreaming } = useChatStore();
+	const tokStr = usage.tokens > 0 ? `${(usage.tokens / 1e3).toFixed(1)}k tok` : "";
+	const costStr = usage.cost > 0 ? `$${usage.cost.toFixed(3)}` : "";
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		style: {
 			height: 24,
@@ -10727,21 +10731,18 @@ function PiStatusbar({ left, right }) {
 					alignItems: "center",
 					gap: 14
 				},
-				children: left ?? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-						style: {
-							display: "inline-flex",
-							alignItems: "center",
-							gap: 5
-						},
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Dot, {
-							color: T.ok,
-							size: 5
-						}), " ready"]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "~/code/pi-ui" }),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "main" })
-				] })
+				children: left ?? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+					style: {
+						display: "inline-flex",
+						alignItems: "center",
+						gap: 5
+					},
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Dot, {
+						color: isStreaming ? T.pi : T.ok,
+						size: 5,
+						animated: isStreaming
+					}), isStreaming ? "streaming" : "ready"]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [typeof process !== "undefined" ? "~" : "~", "/code/pi-ui"] })] })
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 } }),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
@@ -10751,9 +10752,12 @@ function PiStatusbar({ left, right }) {
 					gap: 14
 				},
 				children: right ?? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "claude-sonnet-4-5" }),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "14.2k / 200k" }),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "$0.084" })
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						style: { color: T.pi },
+						children: currentModel
+					}),
+					tokStr && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: tokStr }),
+					costStr && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: costStr })
 				] })
 			})
 		]
@@ -11963,8 +11967,9 @@ function Onboarding() {
 }
 //#endregion
 //#region src/screens/SessionTree.tsx
-function FilterChip({ label, count, active, color }) {
+function FilterChip({ label, count, active, color, onClick }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		onClick,
 		style: {
 			display: "inline-flex",
 			alignItems: "center",
@@ -12112,7 +12117,122 @@ function TreeNode({ depth = 0, glyph, role, text, branch, bookmark, current, dim
 		]
 	});
 }
+var TREE_NODES = [
+	{
+		depth: 0,
+		glyph: "1",
+		role: "user",
+		time: "14:02",
+		text: "Look at SessionStore.loadSession — old sessions crash on open. Migration code is in migrate.ts."
+	},
+	{
+		depth: 0,
+		glyph: "1",
+		role: "pi",
+		time: "14:02",
+		tokens: "1.4k",
+		text: "Reading store.ts and migrate.ts. The crash is from an undefined branches[] field on v0 schemas — migrator handles it but isn't wired into the load path."
+	},
+	{
+		depth: 1,
+		glyph: "2",
+		role: "user",
+		branch: "hotfix",
+		time: "14:04",
+		text: "Try the smallest possible fix first: just call migrate() inside loadSession."
+	},
+	{
+		depth: 2,
+		glyph: "3",
+		role: "pi",
+		time: "14:04",
+		tokens: "2.1k",
+		dim: true,
+		text: "Wrapped loadSession in migrate(). 4/6 tests pass. The v0→v2 migration drops bookmarks because schema-v1 didn't have them."
+	},
+	{
+		depth: 1,
+		glyph: "2",
+		role: "user",
+		branch: "proper-fix",
+		bookmark: "design v2 store",
+		time: "14:08",
+		text: "Branch from #1 — let's do this properly. Add SessionNotFoundError, run migration via the typed path, and write migration tests against the v0 fixtures."
+	},
+	{
+		depth: 2,
+		glyph: "3",
+		role: "pi",
+		time: "14:08",
+		tokens: "3.8k",
+		text: "Plan: SessionNotFoundError type → loadSession returns Result<Session, SessionNotFoundError | MigrationError> → migrator runs inside loadSession → fixture tests for v0/v1/v2 round-trips."
+	},
+	{
+		depth: 2,
+		glyph: "4",
+		role: "user",
+		time: "14:11",
+		text: "Go ahead. Also: write a snapshot test against the v0 fixture so we don't regress."
+	},
+	{
+		depth: 3,
+		glyph: "5",
+		role: "pi",
+		time: "14:11",
+		tokens: "5.2k",
+		current: true,
+		text: "Working. 5 files changed, 11/12 tests passing. The last one is the snapshot — diffing now."
+	},
+	{
+		depth: 2,
+		glyph: "6",
+		role: "user",
+		branch: "ux-experiment",
+		time: "14:09",
+		dim: true,
+		text: "(parked) Try the alternate API where loadSession is async-iterator that yields per-message — might be simpler for the resume case."
+	}
+];
 function SessionTree() {
+	const [query, setQuery] = (0, import_react.useState)("");
+	const [activeFilter, setActiveFilter] = (0, import_react.useState)("all");
+	const filtered = TREE_NODES.filter((n) => {
+		const matchFilter = activeFilter === "all" ? true : activeFilter === "user" ? n.role === "user" : activeFilter === "assistant" ? n.role === "pi" : activeFilter === "bookmarked" ? !!n.bookmark : true;
+		const matchQuery = !query || n.text.toLowerCase().includes(query.toLowerCase());
+		return matchFilter && matchQuery;
+	});
+	const FILTERS = [
+		{
+			label: "all",
+			count: "64",
+			color: void 0
+		},
+		{
+			label: "user",
+			count: "14",
+			color: T.pi
+		},
+		{
+			label: "assistant",
+			count: "14",
+			color: T.tool
+		},
+		{
+			label: "tool calls",
+			count: "31",
+			color: T.info
+		},
+		{
+			label: "errors",
+			count: "2",
+			color: T.err
+		},
+		{
+			label: "bookmarked",
+			count: "2",
+			color: T.warn
+		}
+	];
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(PiWindow, {
 		title: "pi · /tree · pi ui design system",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SidebarMain, {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -12170,6 +12290,7 @@ function SessionTree() {
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 								variant: "ghost",
 								icon: "↗",
+								onClick: () => navigator.clipboard?.writeText(window.location.href).catch(() => {}),
 								children: "Share"
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
@@ -12196,36 +12317,13 @@ function SessionTree() {
 								},
 								children: "filter"
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FilterChip, {
-								label: "all",
-								count: "64",
-								active: true
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FilterChip, {
-								label: "user",
-								count: "14",
-								color: T.pi
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FilterChip, {
-								label: "assistant",
-								count: "14",
-								color: T.tool
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FilterChip, {
-								label: "tool calls",
-								count: "31",
-								color: T.info
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FilterChip, {
-								label: "errors",
-								count: "2",
-								color: T.err
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FilterChip, {
-								label: "bookmarked",
-								count: "2",
-								color: T.warn
-							}),
+							FILTERS.map((f) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FilterChip, {
+								label: f.label,
+								count: f.count,
+								color: f.color,
+								active: activeFilter === f.label,
+								onClick: () => setActiveFilter(f.label)
+							}, f.label)),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 } }),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								style: {
@@ -12236,12 +12334,29 @@ function SessionTree() {
 									borderRadius: 4,
 									border: `1px solid ${T.border}`,
 									background: T.bgInput,
-									fontFamily: F.mono,
-									fontSize: 11,
-									color: T.textMuted,
 									width: 220
 								},
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "⌕" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "search messages…" })]
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									style: {
+										fontFamily: F.mono,
+										fontSize: 11,
+										color: T.textMuted
+									},
+									children: "⌕"
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+									value: query,
+									onChange: (e) => setQuery(e.target.value),
+									placeholder: "search messages…",
+									style: {
+										flex: 1,
+										background: "transparent",
+										border: "none",
+										outline: "none",
+										fontFamily: F.mono,
+										fontSize: 11,
+										color: T.text
+									}
+								})]
 							})
 						]
 					})]
@@ -12253,82 +12368,26 @@ function SessionTree() {
 						padding: "12px 24px",
 						background: T.bg
 					},
-					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TreeNode, {
-							depth: 0,
-							glyph: "1",
-							role: "user",
-							time: "14:02",
-							text: "Look at SessionStore.loadSession — old sessions crash on open. Migration code is in migrate.ts."
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TreeNode, {
-							depth: 0,
-							glyph: "1",
-							role: "pi",
-							time: "14:02",
-							tokens: "1.4k",
-							text: "Reading store.ts and migrate.ts. The crash is from an undefined branches[] field on v0 schemas — migrator handles it but isn't wired into the load path."
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TreeNode, {
-							depth: 1,
-							glyph: "2",
-							role: "user",
-							branch: "hotfix",
-							time: "14:04",
-							text: "Try the smallest possible fix first: just call migrate() inside loadSession."
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TreeNode, {
-							depth: 2,
-							glyph: "3",
-							role: "pi",
-							time: "14:04",
-							tokens: "2.1k",
-							dim: true,
-							text: "Wrapped loadSession in migrate(). 4/6 tests pass. The v0→v2 migration drops bookmarks because schema-v1 didn't have them."
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TreeNode, {
-							depth: 1,
-							glyph: "2",
-							role: "user",
-							branch: "proper-fix",
-							bookmark: "design v2 store",
-							time: "14:08",
-							text: "Branch from #1 — let's do this properly. Add SessionNotFoundError, run migration via the typed path, and write migration tests against the v0 fixtures."
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TreeNode, {
-							depth: 2,
-							glyph: "3",
-							role: "pi",
-							time: "14:08",
-							tokens: "3.8k",
-							text: "Plan: SessionNotFoundError type → loadSession returns Result<Session, SessionNotFoundError | MigrationError> → migrator runs inside loadSession → fixture tests for v0/v1/v2 round-trips."
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TreeNode, {
-							depth: 2,
-							glyph: "4",
-							role: "user",
-							time: "14:11",
-							text: "Go ahead. Also: write a snapshot test against the v0 fixture so we don't regress."
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TreeNode, {
-							depth: 3,
-							glyph: "5",
-							role: "pi",
-							time: "14:11",
-							tokens: "5.2k",
-							current: true,
-							text: "Working. 5 files changed, 11/12 tests passing. The last one is the snapshot — diffing now."
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TreeNode, {
-							depth: 2,
-							glyph: "6",
-							role: "user",
-							branch: "ux-experiment",
-							time: "14:09",
-							dim: true,
-							text: "(parked) Try the alternate API where loadSession is async-iterator that yields per-message — might be simpler for the resume case."
-						})
-					]
+					children: [filtered.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						style: {
+							fontFamily: F.mono,
+							fontSize: 12,
+							color: T.textFaint,
+							padding: "20px 0"
+						},
+						children: "No messages match your filter."
+					}), filtered.map((n, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TreeNode, {
+						depth: n.depth,
+						glyph: n.glyph,
+						role: n.role,
+						time: n.time,
+						text: n.text,
+						branch: n.branch,
+						bookmark: n.bookmark,
+						current: n.current,
+						dim: n.dim,
+						tokens: n.tokens
+					}, i))]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					style: {
@@ -12457,8 +12516,9 @@ function ModelRow({ provider, name, ctx, price, fav, current, status, tags, onCl
 		]
 	});
 }
-function ProviderTab({ name, count, active }) {
+function ProviderTab({ name, count, active, onClick }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		onClick,
 		style: {
 			padding: "8px 12px",
 			borderRadius: 5,
@@ -12487,7 +12547,23 @@ function ProviderTab({ name, count, active }) {
 	});
 }
 function ModelPicker() {
-	const { models, setCurrentModel } = useModelStore();
+	const { models, setCurrentModel, loadModels } = useModelStore();
+	const [query, setQuery] = (0, import_react.useState)("");
+	const [activeProvider, setActiveProvider] = (0, import_react.useState)("all");
+	(0, import_react.useEffect)(() => {
+		loadModels();
+	}, []);
+	const providers = [
+		"all",
+		"★ favorites",
+		...Array.from(new Set(models.map((m) => m.provider)))
+	];
+	const filtered = models.filter((m) => {
+		const matchProvider = activeProvider === "all" ? true : activeProvider === "★ favorites" ? !!m.fav : m.provider === activeProvider;
+		const q = query.toLowerCase();
+		const matchQuery = !q || m.name.toLowerCase().includes(q) || m.provider.toLowerCase().includes(q);
+		return matchProvider && matchQuery;
+	});
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(PiWindow, {
 		title: "pi · /model",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SidebarMain, {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -12567,30 +12643,27 @@ function ModelPicker() {
 							},
 							children: "⌕"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+							value: query,
+							onChange: (e) => setQuery(e.target.value),
+							placeholder: "search models…",
 							style: {
+								flex: 1,
+								background: "transparent",
+								border: "none",
+								outline: "none",
 								fontFamily: F.mono,
 								fontSize: 13,
-								color: T.text,
-								flex: 1
-							},
-							children: ["opus", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: {
-								display: "inline-block",
-								width: 7,
-								height: 14,
-								background: T.pi,
-								marginLeft: 1,
-								verticalAlign: "text-bottom",
-								animation: "pi-blink 1s steps(2) infinite"
-							} })]
+								color: T.text
+							}
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 							style: {
 								fontFamily: F.mono,
 								fontSize: 10,
 								color: T.textMuted
 							},
-							children: "3 matches · ↑↓ navigate · ↵ select · esc cancel"
+							children: [filtered.length, " matches · ↑↓ navigate · ↵ select · esc cancel"]
 						})
 					]
 				})]
@@ -12609,66 +12682,15 @@ function ModelPicker() {
 						background: T.bgPanel,
 						overflow: "auto"
 					},
-					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionLabel, { children: "providers" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, {
-							name: "★ favorites",
-							count: "6"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, {
-							name: "all",
-							count: String(models.length),
-							active: true
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 8 } }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, {
-							name: "Anthropic",
-							count: "9"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, {
-							name: "OpenAI",
-							count: "14"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, {
-							name: "Google",
-							count: "11"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, {
-							name: "Azure",
-							count: "14"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, {
-							name: "Bedrock",
-							count: "22"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, {
-							name: "Mistral",
-							count: "9"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, {
-							name: "Groq",
-							count: "6"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, {
-							name: "Cerebras",
-							count: "4"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, {
-							name: "xAI",
-							count: "3"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, {
-							name: "Hugging Face",
-							count: "18"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, {
-							name: "Ollama",
-							count: "12"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 8 } }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionLabel, { children: "custom" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, { name: "+ add provider" })
-					]
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionLabel, { children: "providers" }), providers.map((p) => {
+						const cnt = p === "all" ? models.length : p === "★ favorites" ? models.filter((m) => m.fav).length : models.filter((m) => m.provider === p).length;
+						return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderTab, {
+							name: p,
+							count: String(cnt),
+							active: activeProvider === p,
+							onClick: () => setActiveProvider(p)
+						}, p);
+					})]
 				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					style: {
 						flex: 1,
@@ -12717,7 +12739,7 @@ function ModelPicker() {
 								flex: 1,
 								overflow: "auto"
 							},
-							children: models.map((m) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ModelRow, {
+							children: filtered.map((m) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ModelRow, {
 								...m,
 								onClick: () => setCurrentModel(m.name)
 							}, `${m.provider}/${m.name}`))
@@ -15120,6 +15142,9 @@ function ThemeCustomizer() {
 //#endregion
 //#region src/screens/ShareExport.tsx
 function ShareExport() {
+	const gistUrl = "https://gist.github.com/earendil/a7b3f9e20c1d";
+	const copyUrl = () => navigator.clipboard?.writeText(gistUrl).catch(() => {});
+	const openUrl = (url) => window.open(url, "_blank");
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(PiWindow, {
 		title: "pi · share",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SidebarMain, {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -15212,7 +15237,7 @@ function ShareExport() {
 											color: T.pi,
 											marginBottom: 4
 										},
-										children: "https://gist.github.com/earendil/a7b3f9e20c1d"
+										children: gistUrl
 									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 										style: {
 											fontFamily: F.mono,
@@ -15225,11 +15250,13 @@ function ShareExport() {
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 									variant: "outline",
 									icon: "⊞",
+									onClick: copyUrl,
 									children: "Copy"
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 									variant: "ghost",
 									icon: "↗",
+									onClick: () => openUrl(gistUrl),
 									children: "Open"
 								})
 							]
@@ -15939,23 +15966,6 @@ function ToolInspector() {
 }
 //#endregion
 //#region src/screens/Steering.tsx
-var QUEUE = [
-	{
-		id: "q1",
-		text: "after the JWT migration, also update the session store to use redis",
-		done: false
-	},
-	{
-		id: "q2",
-		text: "then add a /me endpoint that returns current user from token",
-		done: false
-	},
-	{
-		id: "q3",
-		text: "unit tests for the token verification edge cases",
-		done: false
-	}
-];
 var TRANSCRIPT = [
 	{
 		turn: "user",
@@ -15987,6 +15997,47 @@ var TRANSCRIPT = [
 	}
 ];
 function Steering() {
+	const [steerText, setSteerText] = (0, import_react.useState)("");
+	const [queue, setQueue] = (0, import_react.useState)([
+		{
+			id: "q1",
+			text: "after the JWT migration, also update the session store to use redis"
+		},
+		{
+			id: "q2",
+			text: "then add a /me endpoint that returns current user from token"
+		},
+		{
+			id: "q3",
+			text: "unit tests for the token verification edge cases"
+		}
+	]);
+	const [newQueueText, setNewQueueText] = (0, import_react.useState)("");
+	const [addingToQueue, setAddingToQueue] = (0, import_react.useState)(false);
+	const handleAbort = () => {
+		window.pi?.abort();
+	};
+	const handleSteer = () => {
+		if (!steerText.trim()) return;
+		window.pi?.send({
+			type: "steer",
+			message: steerText.trim()
+		});
+		setSteerText("");
+	};
+	const handleAddToQueue = () => {
+		if (!newQueueText.trim()) return;
+		setQueue((q) => [...q, {
+			id: `q-${Date.now()}`,
+			text: newQueueText.trim()
+		}]);
+		window.pi?.send({
+			type: "queue_add",
+			message: newQueueText.trim()
+		});
+		setNewQueueText("");
+		setAddingToQueue(false);
+	};
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(PiWindow, {
 		title: "pi · steering",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SidebarMain, {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -16032,6 +16083,7 @@ function Steering() {
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 						variant: "danger",
 						icon: "■",
+						onClick: handleAbort,
 						children: "Abort"
 					})
 				]
@@ -16196,16 +16248,27 @@ function Steering() {
 											},
 											children: "steer:"
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+											value: steerText,
+											onChange: (e) => setSteerText(e.target.value),
+											onKeyDown: (e) => {
+												if (e.key === "Enter") handleSteer();
+											},
+											placeholder: "inject a message into the next turn…",
 											style: {
+												flex: 1,
+												background: "transparent",
+												border: "none",
+												outline: "none",
 												fontFamily: F.mono,
 												fontSize: 12.5,
-												color: T.textMuted,
-												flex: 1
-											},
-											children: "also update session store to Redis…"
+												color: T.text
+											}
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Kbd, { children: "↵" })
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Kbd, {
+											onClick: handleSteer,
+											children: "↵"
+										})
 									]
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
@@ -16250,12 +16313,13 @@ function Steering() {
 									color: T.pi,
 									bg: T.piBg,
 									border: T.piBorder,
-									children: QUEUE.length
+									children: queue.length
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 } }),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 									variant: "ghost",
 									icon: "+",
+									onClick: () => setAddingToQueue(true),
 									children: "Add"
 								})
 							]
@@ -16264,7 +16328,7 @@ function Steering() {
 							style: { padding: "10px 12px" },
 							children: [
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionLabel, { children: "pending after current task" }),
-								QUEUE.map((item, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								queue.map((item, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 									style: {
 										display: "flex",
 										alignItems: "flex-start",
@@ -16297,11 +16361,44 @@ function Steering() {
 										}),
 										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 											variant: "ghost",
-											icon: "✕"
+											icon: "✕",
+											onClick: () => setQueue((q) => q.filter((x) => x.id !== item.id))
 										})
 									]
 								}, item.id)),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								addingToQueue ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									style: {
+										marginTop: 10,
+										display: "flex",
+										gap: 6
+									},
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+										autoFocus: true,
+										value: newQueueText,
+										onChange: (e) => setNewQueueText(e.target.value),
+										onKeyDown: (e) => {
+											if (e.key === "Enter") handleAddToQueue();
+											if (e.key === "Escape") setAddingToQueue(false);
+										},
+										placeholder: "next task…",
+										style: {
+											flex: 1,
+											padding: "6px 8px",
+											borderRadius: 4,
+											background: T.bgInput,
+											border: `1px solid ${T.borderHi}`,
+											outline: "none",
+											fontFamily: F.mono,
+											fontSize: 11,
+											color: T.text
+										}
+									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
+										variant: "primary",
+										onClick: handleAddToQueue,
+										children: "Add"
+									})]
+								}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									onClick: () => setAddingToQueue(true),
 									style: {
 										marginTop: 10,
 										padding: "8px 10px",
@@ -16654,6 +16751,47 @@ function CommandPalette() {
 function PermissionPrompt() {
 	const { closeOverlay } = useNav();
 	const errBorder = "rgba(226,107,94,0.35)";
+	const allowOnce = () => {
+		window.pi?.send({
+			type: "permission_response",
+			allowed: true,
+			remember: false
+		});
+		closeOverlay();
+	};
+	const allowAlways = () => {
+		window.pi?.send({
+			type: "permission_response",
+			allowed: true,
+			remember: true
+		});
+		closeOverlay();
+	};
+	const deny = () => {
+		window.pi?.send({
+			type: "permission_response",
+			allowed: false
+		});
+		closeOverlay();
+	};
+	const denyAbort = () => {
+		window.pi?.send({
+			type: "permission_response",
+			allowed: false
+		});
+		window.pi?.abort();
+		closeOverlay();
+	};
+	(0, import_react.useEffect)(() => {
+		const onKey = (e) => {
+			if (e.key === "y") allowOnce();
+			else if (e.key === "a") allowAlways();
+			else if (e.key === "n") deny();
+			else if (e.key === "Escape") denyAbort();
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, []);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 		style: {
 			position: "fixed",
@@ -16815,18 +16953,20 @@ function PermissionPrompt() {
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 								variant: "danger",
 								icon: "✓",
+								onClick: allowOnce,
 								children: "Allow once"
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 								variant: "outline",
 								icon: "∞",
+								onClick: allowAlways,
 								children: "Allow always"
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 } }),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 								variant: "ghost",
 								icon: "✕",
-								onClick: closeOverlay,
+								onClick: deny,
 								children: "Deny"
 							})
 						]

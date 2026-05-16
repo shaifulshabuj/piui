@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { T, F } from '../tokens';
 import { Pill, Btn, Kbd } from '../components/primitives';
 import { useNav } from '../context/NavContext';
@@ -5,6 +6,35 @@ import { useNav } from '../context/NavContext';
 export function PermissionPrompt() {
   const { closeOverlay } = useNav();
   const errBorder = 'rgba(226,107,94,0.35)';
+
+  const allowOnce = () => {
+    window.pi?.send({ type: 'permission_response', allowed: true, remember: false });
+    closeOverlay();
+  };
+  const allowAlways = () => {
+    window.pi?.send({ type: 'permission_response', allowed: true, remember: true });
+    closeOverlay();
+  };
+  const deny = () => {
+    window.pi?.send({ type: 'permission_response', allowed: false });
+    closeOverlay();
+  };
+  const denyAbort = () => {
+    window.pi?.send({ type: 'permission_response', allowed: false });
+    window.pi?.abort();
+    closeOverlay();
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'y') allowOnce();
+      else if (e.key === 'a') allowAlways();
+      else if (e.key === 'n') deny();
+      else if (e.key === 'Escape') denyAbort();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
@@ -59,10 +89,10 @@ export function PermissionPrompt() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Btn variant="danger" icon="✓">Allow once</Btn>
-            <Btn variant="outline" icon="∞">Allow always</Btn>
+            <Btn variant="danger" icon="✓" onClick={allowOnce}>Allow once</Btn>
+            <Btn variant="outline" icon="∞" onClick={allowAlways}>Allow always</Btn>
             <div style={{ flex: 1 }} />
-            <Btn variant="ghost" icon="✕" onClick={closeOverlay}>Deny</Btn>
+            <Btn variant="ghost" icon="✕" onClick={deny}>Deny</Btn>
           </div>
 
           <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, fontFamily: F.mono, fontSize: 10, color: T.textFaint }}>

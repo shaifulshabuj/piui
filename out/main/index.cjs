@@ -144,6 +144,9 @@ var PiProcessManager = class {
 			binaryPath: this.binaryPath
 		};
 	}
+	abort() {
+		this.proc?.kill("SIGINT");
+	}
 	stop() {
 		this.available = false;
 		this.proc?.kill("SIGTERM");
@@ -232,6 +235,9 @@ function registerIpcHandlers() {
 			});
 			proc.on("error", reject);
 		});
+	});
+	electron.ipcMain.handle("pi:abort", async () => {
+		piManager.abort();
 	});
 	electron.ipcMain.handle("app:version", async () => electron.app.getVersion());
 	electron.ipcMain.handle("app:cwd", async () => process.cwd());

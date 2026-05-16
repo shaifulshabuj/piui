@@ -3,6 +3,7 @@ let electron = require("electron");
 electron.contextBridge.exposeInMainWorld("pi", {
 	isElectron: true,
 	send: (cmd) => electron.ipcRenderer.invoke("pi:send", cmd),
+	abort: () => electron.ipcRenderer.invoke("pi:abort"),
 	onEvent: (cb) => {
 		const handler = (_, event) => cb(event);
 		electron.ipcRenderer.on("pi:event", handler);

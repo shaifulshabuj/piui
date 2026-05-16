@@ -4,6 +4,9 @@ import { PiWindow, SidebarMain } from '../components/shell';
 
 export function ShareExport() {
   const gistUrl = 'https://gist.github.com/earendil/a7b3f9e20c1d';
+  const copyUrl = () => navigator.clipboard?.writeText(gistUrl).catch(() => {});
+  const openUrl = (url: string) => window.open(url, '_blank');
+
   return (
     <PiWindow title="pi · share">
       <SidebarMain />
@@ -27,8 +30,8 @@ export function ShareExport() {
                 <div style={{ fontFamily: F.mono, fontSize: 13, color: T.pi, marginBottom: 4 }}>{gistUrl}</div>
                 <div style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textMuted }}>Published as GitHub Gist · public · 3 min ago</div>
               </div>
-              <Btn variant="outline" icon="⊞">Copy</Btn>
-              <Btn variant="ghost" icon="↗">Open</Btn>
+              <Btn variant="outline" icon="⊞" onClick={copyUrl}>Copy</Btn>
+              <Btn variant="ghost" icon="↗" onClick={() => openUrl(gistUrl)}>Open</Btn>
             </div>
 
             <div style={{ fontFamily: F.mono, fontSize: 10, color: T.textFaint, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 }}>export options</div>

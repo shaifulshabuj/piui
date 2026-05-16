@@ -3,6 +3,7 @@
 interface PiAPI {
   isElectron: boolean
   send: (cmd: object) => Promise<void>
+  abort: () => Promise<void>
   onEvent: (cb: (event: object) => void) => () => void
   getState: () => Promise<{
     available: boolean
