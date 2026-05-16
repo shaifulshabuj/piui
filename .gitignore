@@ -22,3 +22,19 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Docuflow
+.docuflow/
+
+# Waymark
+.waymark/
+.mcp.json
+AGENTS.md
+CLAUDE.md
+COPILOT.md
+devloop.config.sh
+waymark.config.json
+.claude/agents/devloop-architect.md
+.claude/agents/devloop-orchestrator.md
+.claude/agents/devloop-reviewer.md
+.github/copilot-instructions.md
