@@ -38,3 +38,8 @@ waymark.config.json
 .claude/agents/devloop-orchestrator.md
 .claude/agents/devloop-reviewer.md
 .github/copilot-instructions.md
+.devloop/provider-health.sh
+.devloop/agent-docs/claude-docs.md
+.devloop/agent-docs/copilot-docs.md
+.devloop/agent-docs/last-sync-report.md
+.devloop/agent-docs/provider-context.md
