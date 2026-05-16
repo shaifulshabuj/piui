@@ -4,17 +4,20 @@ import type { Screen, Overlay } from '../types';
 interface NavState {
   screen: Screen;
   overlay: Overlay;
+  inspectToolId: string | null;
 }
 
 type NavAction =
   | { type: 'NAVIGATE'; screen: Screen }
   | { type: 'OPEN_OVERLAY'; overlay: Overlay }
-  | { type: 'CLOSE_OVERLAY' };
+  | { type: 'CLOSE_OVERLAY' }
+  | { type: 'INSPECT'; toolId: string };
 
 interface NavContextValue extends NavState {
   navigate: (screen: Screen) => void;
   openOverlay: (overlay: Overlay) => void;
   closeOverlay: () => void;
+  inspect: (toolId: string) => void;
 }
 
 const NavContext = createContext<NavContextValue | null>(null);
@@ -27,6 +30,8 @@ function navReducer(state: NavState, action: NavAction): NavState {
       return { ...state, overlay: action.overlay };
     case 'CLOSE_OVERLAY':
       return { ...state, overlay: null };
+    case 'INSPECT':
+      return { ...state, screen: 'inspect', overlay: null, inspectToolId: action.toolId };
     default:
       return state;
   }
@@ -36,11 +41,13 @@ export function NavProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(navReducer, {
     screen: 'chat',
     overlay: null,
+    inspectToolId: null,
   });
 
   const navigate = (screen: Screen) => dispatch({ type: 'NAVIGATE', screen });
   const openOverlay = (overlay: Overlay) => dispatch({ type: 'OPEN_OVERLAY', overlay });
   const closeOverlay = () => dispatch({ type: 'CLOSE_OVERLAY' });
+  const inspect = (toolId: string) => dispatch({ type: 'INSPECT', toolId });
 
   // Global keyboard shortcuts
   React.useEffect(() => {
@@ -52,13 +59,17 @@ export function NavProvider({ children }: { children: React.ReactNode }) {
         e.preventDefault();
         navigate('model');
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+        e.preventDefault();
+        openOverlay('command-palette');
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <NavContext.Provider value={{ ...state, navigate, openOverlay, closeOverlay }}>
+    <NavContext.Provider value={{ ...state, navigate, openOverlay, closeOverlay, inspect }}>
       {children}
     </NavContext.Provider>
   );

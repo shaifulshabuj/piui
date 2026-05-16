@@ -160,8 +160,10 @@ export function SidebarMain() {
           active={screen === 'prompts'} onClick={() => navigate('prompts')} />
         <NavItem icon="❖" label="Prompts" hint="8"
           active={screen === 'prompts'} onClick={() => navigate('prompts')} />
+        <NavItem icon="◎" label="Features"
+          active={screen === 'features'} onClick={() => navigate('features')} />
         <NavItem icon="⚙" label="Settings"
-          active={screen === 'theme'} onClick={() => navigate('theme')} />
+          active={screen === 'settings'} onClick={() => navigate('settings')} />
         <NavItem icon="◐" label="Command Palette"
           onClick={() => openOverlay('command-palette')} />
       </div>

@@ -1,13 +1,15 @@
 import { create } from 'zustand'
-import type { Model } from '../types'
+import type { Model, ThinkingLevel } from '../types'
 
 interface ModelState {
   models: Model[]
   currentModel: string
   isLoading: boolean
+  thinkingLevel: ThinkingLevel
   setCurrentModel: (name: string) => void
   setModels: (models: Array<{ id?: string; provider: string; name: string }>) => void
   loadModels: () => void
+  setThinkingLevel: (level: ThinkingLevel) => void
 }
 
 const MOCK_MODELS: Model[] = [
@@ -32,6 +34,7 @@ export const useModelStore = create<ModelState>((set) => ({
   models: MOCK_MODELS,
   currentModel: 'claude-sonnet-4-5',
   isLoading: false,
+  thinkingLevel: 'medium',
 
   setCurrentModel: (name: string) => {
     set((s) => ({
@@ -64,5 +67,10 @@ export const useModelStore = create<ModelState>((set) => ({
 
   loadModels: () => {
     window.pi?.send({ type: 'get_available_models' })
+  },
+
+  setThinkingLevel: (level: ThinkingLevel) => {
+    set({ thinkingLevel: level })
+    window.pi?.send({ type: 'set_thinking_level', level })
   },
 }))

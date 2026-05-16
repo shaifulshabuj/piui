@@ -10,9 +10,43 @@ export type Screen =
   | 'theme'
   | 'share'
   | 'inspect'
-  | 'steering';
+  | 'steering'
+  | 'features'
+  | 'settings';
 
 export type Overlay = 'command-palette' | 'permission-prompt' | null;
+
+export interface PermissionRequest {
+  id: string;
+  tool: string;
+  description: string;
+  command?: string;
+  level: 'safe' | 'dangerous' | 'destructive';
+}
+
+export interface SessionMeta {
+  id: string;
+  filePath: string;
+  name?: string;
+  cwd?: string;
+  model?: string;
+  createdAt: string;
+  messageCount?: number;
+}
+
+export interface SessionEntry {
+  type: string;
+  id?: string;
+  parentId?: string;
+  role?: 'user' | 'assistant';
+  content?: string;
+  name?: string;
+  label?: string;
+  timestamp?: string;
+  [key: string]: unknown;
+}
+
+export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface Message {
   id: string;

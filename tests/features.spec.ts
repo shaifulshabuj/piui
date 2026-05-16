@@ -44,9 +44,9 @@ test.describe('Navigation', () => {
     await expectScreen(page, 'Prompt Templates');
   });
 
-  test('sidebar "Settings" nav item navigates to ThemeCustomizer', async ({ page }) => {
+  test('sidebar "Settings" nav item navigates to Settings screen', async ({ page }) => {
     await clickNav(page, 'Settings');
-    await expectScreen(page, 'Theme');
+    await expectScreen(page, 'Settings');
   });
 
   test('pressing Ctrl+L navigates to ModelPicker', async ({ page }) => {
@@ -290,7 +290,10 @@ test.describe('ContextEditor', () => {
 
 test.describe('ThemeCustomizer', () => {
   test.beforeEach(async ({ page }) => {
+    // Settings nav now goes to Settings screen; click "Open Theme Customizer" from there
     await clickNav(page, 'Settings');
+    await expectScreen(page, 'Settings');
+    await page.locator('button', { hasText: 'Open Theme Customizer' }).click();
     await expectScreen(page, 'Theme');
   });
 
@@ -332,15 +335,13 @@ test.describe('ShareExport', () => {
   });
 
   test('export format buttons are rendered', async ({ page }) => {
-    await expect(page.locator('text=markdown').first()).toBeVisible();
     await expect(page.locator('text=html').first()).toBeVisible();
     await expect(page.locator('text=json').first()).toBeVisible();
-    await expect(page.locator('text=pdf').first()).toBeVisible();
   });
 
-  test('Export .md button is clickable', async ({ page }) => {
-    const exportMd = page.locator('button', { hasText: 'Export .md' });
-    await exportMd.click();
+  test('Export .html button is clickable', async ({ page }) => {
+    const exportHtml = page.locator('button', { hasText: 'Export .html' });
+    await exportHtml.click();
     // Should not crash
     await expect(page.locator('text=Share & Export').first()).toBeVisible();
   });

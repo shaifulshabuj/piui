@@ -6,12 +6,33 @@ interface UsageStats {
   cost: number
 }
 
+interface SessionStats {
+  title?: string
+  messages?: number
+  toolCalls?: number
+  tokens?: number
+  cost?: number
+  model?: string
+  duration?: string
+  created?: string
+}
+
 interface ChatState {
   messages: Message[]
   toolCalls: ToolCallData[]
   isStreaming: boolean
   streamingId: string | null
   usage: UsageStats
+  steeringQueue: string[]
+  followUpQueue: string[]
+  isCompacting: boolean
+  isRetrying: boolean
+  retryAttempt: number
+  pendingSteeringCount: number
+  pendingFollowUpCount: number
+  sessionFile: string
+  currentEntryId: string | null
+  sessionStats: SessionStats | null
   sendPrompt: (text: string) => void
   startAssistantMessage: (id: string) => void
   appendDelta: (id: string, text: string) => void
@@ -19,29 +40,31 @@ interface ChatState {
   addToolCall: (tc: Omit<ToolCallData, 'expanded'>) => void
   updateToolCall: (id: string, update: Partial<ToolCallData>) => void
   updateUsage: (u: Partial<UsageStats>) => void
+  setQueueCounts: (steering: number, followUp: number) => void
+  setCompacting: (v: boolean) => void
+  setRetrying: (v: boolean, attempt: number) => void
+  addError: (msg: string) => void
+  setStreaming: (v: boolean) => void
+  setSessionFile: (filePath: string) => void
+  setSessionStats: (stats: SessionStats) => void
 }
 
-const MOCK_MESSAGES: Message[] = [
-  {
-    id: 'u1',
-    role: 'user',
-    content:
-      'Look at SessionStore.loadSession — it occasionally crashes when opening an old session. Find the cause and fix it; the schema migration already exists in migrate.ts.',
-  },
-  {
-    id: 'a1',
-    role: 'assistant',
-    content:
-      "Looking at SessionStore.loadSession — it returns the raw JSON tree without validation, so a missing file silently produces undefined downstream. I'll add a typed error and route old schemas through the migrator we already have.",
-  },
-]
-
 export const useChatStore = create<ChatState>((set, get) => ({
-  messages: MOCK_MESSAGES,
+  messages: [],
   toolCalls: [],
   isStreaming: false,
   streamingId: null,
-  usage: { tokens: 14200, cost: 0.084 },
+  usage: { tokens: 0, cost: 0 },
+  steeringQueue: [],
+  followUpQueue: [],
+  isCompacting: false,
+  isRetrying: false,
+  retryAttempt: 0,
+  pendingSteeringCount: 0,
+  pendingFollowUpCount: 0,
+  sessionFile: '',
+  currentEntryId: null,
+  sessionStats: null,
 
   sendPrompt: (text: string) => {
     const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: text }
@@ -110,5 +133,49 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   updateUsage: (u: Partial<UsageStats>) => {
     set((s) => ({ usage: { ...s.usage, ...u } }))
+  },
+
+  setQueueCounts: (steering: number, followUp: number) => {
+    set({ pendingSteeringCount: steering, pendingFollowUpCount: followUp })
+  },
+
+  setCompacting: (v: boolean) => {
+    set({ isCompacting: v })
+  },
+
+  setRetrying: (v: boolean, attempt: number) => {
+    set({ isRetrying: v, retryAttempt: attempt })
+  },
+
+  addError: (msg: string) => {
+    const errMsg: Message = {
+      id: `err-${Date.now()}`,
+      role: 'assistant',
+      content: '⚠ ' + msg,
+    }
+    set((s) => ({ messages: [...s.messages, errMsg] }))
+  },
+
+  setStreaming: (v: boolean) => {
+    set((s) => {
+      if (!v && s.streamingId) {
+        return {
+          isStreaming: false,
+          streamingId: null,
+          messages: s.messages.map((m) =>
+            m.id === s.streamingId ? { ...m, streaming: false } : m
+          ),
+        }
+      }
+      return { isStreaming: v }
+    })
+  },
+
+  setSessionFile: (filePath: string) => {
+    set({ sessionFile: filePath })
+  },
+
+  setSessionStats: (stats) => {
+    set({ sessionStats: stats })
   },
 }))

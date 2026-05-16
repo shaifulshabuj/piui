@@ -2,27 +2,31 @@ import { useEffect } from 'react';
 import { T, F } from '../tokens';
 import { Pill, Btn, Kbd } from '../components/primitives';
 import { useNav } from '../context/NavContext';
+import { usePermissionStore } from '../store/permissionStore';
 
 export function PermissionPrompt() {
   const { closeOverlay } = useNav();
+  const { current, clearRequest } = usePermissionStore();
   const errBorder = 'rgba(226,107,94,0.35)';
 
+  const close = () => { clearRequest(); closeOverlay(); };
+
   const allowOnce = () => {
-    window.pi?.send({ type: 'permission_response', allowed: true, remember: false });
-    closeOverlay();
+    window.pi?.send({ type: 'permission_response', id: current?.id, allowed: true, remember: false });
+    close();
   };
   const allowAlways = () => {
-    window.pi?.send({ type: 'permission_response', allowed: true, remember: true });
-    closeOverlay();
+    window.pi?.send({ type: 'permission_response', id: current?.id, allowed: true, remember: true });
+    close();
   };
   const deny = () => {
-    window.pi?.send({ type: 'permission_response', allowed: false });
-    closeOverlay();
+    window.pi?.send({ type: 'permission_response', id: current?.id, allowed: false });
+    close();
   };
   const denyAbort = () => {
-    window.pi?.send({ type: 'permission_response', allowed: false });
+    window.pi?.send({ type: 'permission_response', id: current?.id, allowed: false });
     window.pi?.abort();
-    closeOverlay();
+    close();
   };
 
   useEffect(() => {
@@ -34,7 +38,12 @@ export function PermissionPrompt() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [current]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const command = current?.command ?? 'unknown command';
+  const description = current?.description ?? 'pi wants to execute a potentially dangerous operation.';
+  const level = current?.level ?? 'dangerous';
+  const tool = current?.tool ?? 'bash';
 
   return (
     <div
@@ -42,7 +51,7 @@ export function PermissionPrompt() {
         position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 100,
       }}
-      onClick={closeOverlay}
+      onClick={close}
     >
       <div
         style={{
@@ -66,14 +75,12 @@ export function PermissionPrompt() {
             padding: '10px 14px', marginBottom: 14,
           }}>
             <span style={{ fontFamily: F.mono, fontSize: 13, color: T.text }}>
-              <span style={{ color: T.err }}>rm</span>
-              <span style={{ color: T.textMuted }}> -rf</span>
-              <span style={{ color: T.warn }}> ./dist</span>
+              {command}
             </span>
           </div>
 
           <div style={{ fontFamily: F.sans, fontSize: 12.5, color: T.textDim, lineHeight: 1.6, marginBottom: 16 }}>
-            This command will permanently delete the <code style={{ fontFamily: F.mono, color: T.text }}>./dist</code> directory and all its contents. This action cannot be undone.
+            {description}
           </div>
 
           <div style={{
@@ -81,10 +88,10 @@ export function PermissionPrompt() {
             padding: '10px 14px', marginBottom: 18,
           }}>
             <div style={{ fontFamily: F.mono, fontSize: 10, color: T.err, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 }}>
-              dangerous · shell:run · destructive
+              {level} · {tool}
             </div>
             <div style={{ fontFamily: F.sans, fontSize: 12, color: T.textDim }}>
-              The path <code style={{ fontFamily: F.mono, color: T.text }}>./dist</code> is not on the allow-list in AGENTS.md. Approve once, always, or deny.
+              Approve once, always, or deny this request.
             </div>
           </div>
 

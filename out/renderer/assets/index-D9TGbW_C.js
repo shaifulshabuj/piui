@@ -9939,13 +9939,20 @@ function navReducer(state, action) {
 			...state,
 			overlay: null
 		};
+		case "INSPECT": return {
+			...state,
+			screen: "inspect",
+			overlay: null,
+			inspectToolId: action.toolId
+		};
 		default: return state;
 	}
 }
 function NavProvider({ children }) {
 	const [state, dispatch] = (0, import_react.useReducer)(navReducer, {
 		screen: "chat",
-		overlay: null
+		overlay: null,
+		inspectToolId: null
 	});
 	const navigate = (screen) => dispatch({
 		type: "NAVIGATE",
@@ -9956,12 +9963,20 @@ function NavProvider({ children }) {
 		overlay
 	});
 	const closeOverlay = () => dispatch({ type: "CLOSE_OVERLAY" });
+	const inspect = (toolId) => dispatch({
+		type: "INSPECT",
+		toolId
+	});
 	import_react.useEffect(() => {
 		const handler = (e) => {
 			if (e.key === "Escape") closeOverlay();
 			if ((e.ctrlKey || e.metaKey) && e.key === "l") {
 				e.preventDefault();
 				navigate("model");
+			}
+			if ((e.ctrlKey || e.metaKey) && e.key === "/") {
+				e.preventDefault();
+				openOverlay("command-palette");
 			}
 		};
 		window.addEventListener("keydown", handler);
@@ -9972,7 +9987,8 @@ function NavProvider({ children }) {
 			...state,
 			navigate,
 			openOverlay,
-			closeOverlay
+			closeOverlay,
+			inspect
 		},
 		children
 	});
@@ -10028,24 +10044,25 @@ var createImpl = (createState) => {
 var create = ((createState) => createState ? createImpl(createState) : createImpl);
 //#endregion
 //#region src/store/chatStore.ts
-var MOCK_MESSAGES = [{
-	id: "u1",
-	role: "user",
-	content: "Look at SessionStore.loadSession — it occasionally crashes when opening an old session. Find the cause and fix it; the schema migration already exists in migrate.ts."
-}, {
-	id: "a1",
-	role: "assistant",
-	content: "Looking at SessionStore.loadSession — it returns the raw JSON tree without validation, so a missing file silently produces undefined downstream. I'll add a typed error and route old schemas through the migrator we already have."
-}];
 var useChatStore = create((set, get) => ({
-	messages: MOCK_MESSAGES,
+	messages: [],
 	toolCalls: [],
 	isStreaming: false,
 	streamingId: null,
 	usage: {
-		tokens: 14200,
-		cost: .084
+		tokens: 0,
+		cost: 0
 	},
+	steeringQueue: [],
+	followUpQueue: [],
+	isCompacting: false,
+	isRetrying: false,
+	retryAttempt: 0,
+	pendingSteeringCount: 0,
+	pendingFollowUpCount: 0,
+	sessionFile: "",
+	currentEntryId: null,
+	sessionStats: null,
 	sendPrompt: (text) => {
 		const userMsg = {
 			id: `u-${Date.now()}`,
@@ -10117,6 +10134,48 @@ var useChatStore = create((set, get) => ({
 			...s.usage,
 			...u
 		} }));
+	},
+	setQueueCounts: (steering, followUp) => {
+		set({
+			pendingSteeringCount: steering,
+			pendingFollowUpCount: followUp
+		});
+	},
+	setCompacting: (v) => {
+		set({ isCompacting: v });
+	},
+	setRetrying: (v, attempt) => {
+		set({
+			isRetrying: v,
+			retryAttempt: attempt
+		});
+	},
+	addError: (msg) => {
+		const errMsg = {
+			id: `err-${Date.now()}`,
+			role: "assistant",
+			content: "⚠ " + msg
+		};
+		set((s) => ({ messages: [...s.messages, errMsg] }));
+	},
+	setStreaming: (v) => {
+		set((s) => {
+			if (!v && s.streamingId) return {
+				isStreaming: false,
+				streamingId: null,
+				messages: s.messages.map((m) => m.id === s.streamingId ? {
+					...m,
+					streaming: false
+				} : m)
+			};
+			return { isStreaming: v };
+		});
+	},
+	setSessionFile: (filePath) => {
+		set({ sessionFile: filePath });
+	},
+	setSessionStats: (stats) => {
+		set({ sessionStats: stats });
 	}
 }));
 //#endregion
@@ -10256,6 +10315,7 @@ var useModelStore = create((set) => ({
 	models: MOCK_MODELS,
 	currentModel: "claude-sonnet-4-5",
 	isLoading: false,
+	thinkingLevel: "medium",
 	setCurrentModel: (name) => {
 		set((s) => ({
 			models: s.models.map((m) => ({
@@ -10289,7 +10349,34 @@ var useModelStore = create((set) => ({
 	},
 	loadModels: () => {
 		window.pi?.send({ type: "get_available_models" });
+	},
+	setThinkingLevel: (level) => {
+		set({ thinkingLevel: level });
+		window.pi?.send({
+			type: "set_thinking_level",
+			level
+		});
 	}
+}));
+//#endregion
+//#region src/store/permissionStore.ts
+var usePermissionStore = create((set) => ({
+	current: null,
+	setRequest: (req) => set({ current: req }),
+	clearRequest: () => set({ current: null })
+}));
+//#endregion
+//#region src/store/commandsStore.ts
+var useCommandsStore = create((set) => ({
+	commands: [],
+	isLoaded: false,
+	load: () => {
+		window.pi?.send({ type: "get_commands" });
+	},
+	setCommands: (commands) => set({
+		commands,
+		isLoaded: true
+	})
 }));
 //#endregion
 //#region src/lib/eventHandler.ts
@@ -10299,30 +10386,72 @@ function setupEventHandler() {
 		const e = raw;
 		const chat = useChatStore.getState();
 		const model = useModelStore.getState();
+		const commands = useCommandsStore.getState();
 		switch (e.type) {
 			case "message_start":
 				chat.startAssistantMessage(e.id);
 				break;
-			case "message_delta":
-				chat.appendDelta(e.id, e.text);
+			case "message_update": {
+				const msg = e.message;
+				if (msg) {
+					const deltaText = (msg.content ?? []).filter((c) => c.type === "text_delta").map((c) => c.text ?? "").join("");
+					if (deltaText) chat.appendDelta(msg.id, deltaText);
+				}
 				break;
+			}
 			case "message_end":
 				chat.finalizeMessage(e.id);
 				break;
-			case "tool_call_start":
+			case "tool_execution_start":
 				chat.addToolCall({
-					id: e.id,
-					tool: e.tool,
-					args: String(e.args ?? ""),
+					id: e.toolExecutionId,
+					tool: e.name,
+					args: JSON.stringify(e.input ?? {}),
 					status: "run"
 				});
 				break;
-			case "tool_call_end":
-				chat.updateToolCall(e.id, {
+			case "tool_execution_update":
+				chat.updateToolCall(e.toolExecutionId, { output: e.output });
+				break;
+			case "tool_execution_end":
+				chat.updateToolCall(e.toolExecutionId, {
 					status: e.error ? "err" : "ok",
 					output: e.output
 				});
 				break;
+			case "queue_update":
+				chat.setQueueCounts(e.steeringCount ?? 0, e.followUpCount ?? 0);
+				break;
+			case "compaction_start":
+				chat.setCompacting(true);
+				break;
+			case "compaction_end":
+				chat.setCompacting(false);
+				break;
+			case "auto_retry_start":
+				chat.setRetrying(true, e.attempt ?? 1);
+				break;
+			case "auto_retry_end":
+				chat.setRetrying(false, 0);
+				break;
+			case "agent_end":
+				chat.setStreaming(false);
+				break;
+			case "extension_error":
+				chat.addError(e.error);
+				break;
+			case "permission_request": {
+				const req = e;
+				usePermissionStore.getState().setRequest({
+					id: req.id,
+					tool: req.tool,
+					description: req.description,
+					command: req.command,
+					level: req.level
+				});
+				window.dispatchEvent(new CustomEvent("pi:permission-request"));
+				break;
+			}
 			case "usage":
 				chat.updateUsage({
 					tokens: e.tokens,
@@ -10335,6 +10464,35 @@ function setupEventHandler() {
 			case "models_list":
 				model.setModels(e.models);
 				break;
+			case "response": {
+				const cmd = e.command;
+				if (cmd === "get_commands") {
+					const data = e.data;
+					if (data?.commands) commands.setCommands(data.commands.map((c) => ({
+						name: c.name,
+						description: c.description,
+						source: c.source ?? "extension",
+						location: c.location,
+						path: c.path
+					})));
+				} else if (cmd === "get_session_stats") {
+					const data = e.data;
+					if (data) chat.setSessionStats({
+						title: data.title,
+						messages: data.messages,
+						toolCalls: data.toolCalls,
+						tokens: data.tokens,
+						cost: data.cost,
+						model: data.model,
+						duration: data.duration,
+						created: data.created
+					});
+				} else if (cmd === "get_state") {
+					const data = e.data;
+					if (data?.sessionFile) chat.setSessionFile(data.sessionFile);
+				}
+				break;
+			}
 		}
 	});
 }
@@ -10881,10 +11039,16 @@ function SidebarMain() {
 						onClick: () => navigate("prompts")
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(NavItem, {
+						icon: "◎",
+						label: "Features",
+						active: screen === "features",
+						onClick: () => navigate("features")
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(NavItem, {
 						icon: "⚙",
 						label: "Settings",
-						active: screen === "theme",
-						onClick: () => navigate("theme")
+						active: screen === "settings",
+						onClick: () => navigate("settings")
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(NavItem, {
 						icon: "◐",
@@ -11036,102 +11200,6 @@ function ToolCall({ tool, args, status, output, expanded, children, accent }) {
 		}), expanded && children]
 	});
 }
-function DiffPreview() {
-	const lines = [
-		{
-			t: "h",
-			s: "@@ src/session/store.ts:142 @@"
-		},
-		{
-			t: " ",
-			s: "  async loadSession(id: string) {"
-		},
-		{
-			t: " ",
-			s: "    const tree = await this.fs.readJson(`${id}.json`);"
-		},
-		{
-			t: "-",
-			s: "    return tree;"
-		},
-		{
-			t: "+",
-			s: "    if (!tree) throw new SessionNotFoundError(id);"
-		},
-		{
-			t: "+",
-			s: "    return this.migrate(tree);"
-		},
-		{
-			t: " ",
-			s: "  }"
-		}
-	];
-	const bg = {
-		"+": T.okBg,
-		"-": T.errBg,
-		" ": "transparent",
-		h: T.bgElev
-	};
-	const fg = {
-		"+": T.ok,
-		"-": T.err,
-		" ": T.textDim,
-		h: T.textMuted
-	};
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-		style: {
-			fontFamily: F.mono,
-			fontSize: 11.5,
-			padding: "6px 0"
-		},
-		children: lines.map((l, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			style: {
-				display: "flex",
-				padding: "0 12px",
-				background: bg[l.t],
-				color: fg[l.t],
-				lineHeight: 1.55
-			},
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-				style: {
-					width: 14,
-					color: T.textFaint,
-					flexShrink: 0
-				},
-				children: l.t === "h" ? "" : l.t === " " ? " " : l.t
-			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-				style: { whiteSpace: "pre" },
-				children: l.s
-			})]
-		}, i))
-	});
-}
-function PlanItem({ children, done, active }) {
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		style: {
-			display: "flex",
-			alignItems: "baseline",
-			gap: 9,
-			fontSize: 13
-		},
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-			style: {
-				color: done ? T.ok : active ? T.pi : T.textFaint,
-				width: 12,
-				fontSize: 11
-			},
-			children: done ? "✓" : active ? "◐" : "○"
-		}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-			style: {
-				color: done ? T.textMuted : active ? T.text : T.textDim,
-				textDecoration: done ? "line-through" : "none",
-				textDecorationColor: T.textFaint
-			},
-			children
-		})]
-	});
-}
 function SteeringQueue() {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		style: {
@@ -11277,63 +11345,147 @@ function Composer({ onCommandPalette, onSubmit, usage }) {
 	});
 }
 //#endregion
+//#region src/lib/rpcClient.ts
+function send(cmd) {
+	return window.pi?.send(cmd);
+}
+var rpc = {
+	sendPrompt: (message, sessionId) => send({
+		type: "prompt",
+		message,
+		sessionId
+	}),
+	steer: (message) => send({
+		type: "steer",
+		message
+	}),
+	followUp: (message) => send({
+		type: "follow_up",
+		message
+	}),
+	abort: () => send({ type: "abort" }),
+	newSession: (model) => send({
+		type: "new_session",
+		model
+	}),
+	getMessages: (sessionId) => send({
+		type: "get_messages",
+		sessionId
+	}),
+	setModel: (model) => send({
+		type: "set_model",
+		model
+	}),
+	getAvailableModels: () => send({ type: "get_available_models" }),
+	cycleModel: () => send({ type: "cycle_model" }),
+	getState: () => window.pi?.getState(),
+	setThinkingLevel: (level) => send({
+		type: "set_thinking_level",
+		level
+	}),
+	cycleThinkingLevel: () => send({ type: "cycle_thinking_level" }),
+	setSteeringMode: (mode) => send({
+		type: "set_steering_mode",
+		mode
+	}),
+	setFollowUpMode: (mode) => send({
+		type: "set_follow_up_mode",
+		mode
+	}),
+	compact: (customInstructions) => send({
+		type: "compact",
+		customInstructions
+	}),
+	exportHtml: (outputPath) => send({
+		type: "export_html",
+		outputPath
+	}),
+	switchSession: (sessionPath) => send({
+		type: "switch_session",
+		sessionPath
+	}),
+	fork: (entryId) => send({
+		type: "fork",
+		entryId
+	}),
+	clone: () => send({ type: "clone" }),
+	getForkMessages: () => send({ type: "get_fork_messages" }),
+	setSessionName: (name) => send({
+		type: "set_session_name",
+		name
+	}),
+	getCommands: () => send({ type: "get_commands" }),
+	getSessionStats: () => send({ type: "get_session_stats" }),
+	setAutoCompaction: (enabled) => send({
+		type: "set_auto_compaction",
+		enabled
+	})
+};
+//#endregion
 //#region src/screens/MainChat.tsx
-function StreamedPlanList() {
+function EmptyState({ onSend }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		style: { paddingTop: 4 },
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			style: {
-				marginBottom: 10,
-				fontFamily: F.mono,
-				fontSize: 13.5,
-				lineHeight: 1.65
-			},
-			children: [
-				"Looking at ",
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", {
+		style: {
+			flex: 1,
+			display: "flex",
+			flexDirection: "column",
+			alignItems: "center",
+			justifyContent: "center",
+			gap: 20,
+			padding: "0 40px"
+		},
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+				style: {
+					fontFamily: F.mono,
+					fontSize: 48,
+					color: T.pi,
+					opacity: .4
+				},
+				children: "π"
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				style: {
+					fontFamily: F.sans,
+					fontSize: 15,
+					color: T.textDim
+				},
+				children: "Start a session"
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				style: {
+					display: "flex",
+					flexDirection: "column",
+					gap: 8,
+					width: "100%",
+					maxWidth: 480
+				},
+				children: [
+					"Explain this codebase to me",
+					"Fix any type errors in src/",
+					"Write tests for the session store"
+				].map((s) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+					onClick: () => onSend(s),
 					style: {
-						color: T.pi,
-						fontWeight: 500
+						textAlign: "left",
+						padding: "10px 16px",
+						borderRadius: 6,
+						cursor: "pointer",
+						background: T.bgElev,
+						border: `1px solid ${T.border}`,
+						fontFamily: F.sans,
+						fontSize: 13,
+						color: T.textDim
 					},
-					children: "SessionStore.loadSession"
-				}),
-				" — it returns the raw JSON tree without validation, so a missing file silently produces",
-				" ",
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", {
-					style: { color: T.pi },
-					children: "undefined"
-				}),
-				" downstream. I'll add a typed error and route old schemas through the migrator we already have."
-			]
-		}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			style: {
-				display: "flex",
-				flexDirection: "column",
-				gap: 4,
-				marginBottom: 8
-			},
-			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PlanItem, {
-					done: true,
-					children: "Read session/store.ts and migrate.ts"
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PlanItem, {
-					done: true,
-					children: "Locate every loadSession caller (6 sites)"
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PlanItem, {
-					active: true,
-					children: "Add SessionNotFoundError + tests"
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PlanItem, { children: "Wire migrate() into the load path" }),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PlanItem, { children: "Update fixtures so v0 schemas round-trip" })
-			]
-		})]
+					children: s
+				}, s))
+			})
+		]
 	});
 }
 function MainChat() {
 	const { navigate, openOverlay } = useNav();
-	const { messages, toolCalls, isStreaming, usage, sendPrompt } = useChatStore();
+	const { messages, toolCalls, isStreaming, isCompacting, isRetrying, retryAttempt, usage, sendPrompt } = useChatStore();
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(PiWindow, {
 		title: "pi · ~/code/pi-ui · main",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SidebarMain, {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -11375,13 +11527,14 @@ function MainChat() {
 							style: { color: T.textFaint },
 							children: "·"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pill, { children: "claude-sonnet-4-5" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							style: { color: T.textFaint },
-							children: "·"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [messages.length, " turns · 3 branches"] }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [messages.length, " turns"] }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 } }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
+							variant: "ghost",
+							icon: "+",
+							onClick: () => rpc.newSession(),
+							children: "New"
+						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 							variant: "ghost",
 							icon: "⎇",
@@ -11396,9 +11549,42 @@ function MainChat() {
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 							variant: "ghost",
+							icon: "⊙",
+							onClick: () => rpc.compact(),
+							title: "Compact session",
+							children: "Compact"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
+							variant: "ghost",
 							icon: "⋯",
 							onClick: () => navigate("inspect")
 						})
+					]
+				}),
+				isCompacting && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					style: {
+						padding: "6px 24px",
+						background: `${T.pi}18`,
+						borderBottom: `1px solid ${T.piBorder}`,
+						fontFamily: F.mono,
+						fontSize: 11,
+						color: T.pi
+					},
+					children: "⊙ Compacting session history…"
+				}),
+				isRetrying && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					style: {
+						padding: "6px 24px",
+						background: `${T.warn}15`,
+						borderBottom: `1px solid ${T.warn}40`,
+						fontFamily: F.mono,
+						fontSize: 11,
+						color: T.warn
+					},
+					children: [
+						"↻ Auto-retrying (attempt ",
+						retryAttempt,
+						")…"
 					]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -11406,64 +11592,26 @@ function MainChat() {
 						flex: 1,
 						overflow: "auto",
 						minHeight: 0,
-						background: T.bg
+						background: T.bg,
+						display: "flex",
+						flexDirection: "column"
 					},
-					children: [
-						messages.map((msg, i) => {
+					children: [messages.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyState, { onSend: sendPrompt }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+						messages.map((msg) => {
 							if (msg.role === "user") return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MessageUser, { children: msg.content }, msg.id);
-							if (i === 1) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MessageAssistant, {
-								streaming: msg.streaming,
-								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StreamedPlanList, {})
-							}, msg.id);
 							return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MessageAssistant, {
 								streaming: msg.streaming,
 								children: msg.content
 							}, msg.id);
 						}),
-						messages.length >= 2 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ToolCall, {
-								tool: "read_file",
-								args: "src/session/store.ts",
-								status: "ok",
-								output: "412 lines"
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ToolCall, {
-								tool: "read_file",
-								args: "src/session/migrate.ts",
-								status: "ok",
-								output: "186 lines"
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ToolCall, {
-								tool: "grep",
-								args: "\"loadSession\\\\(\" --type=ts",
-								status: "ok",
-								output: "6 matches"
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ToolCall, {
-								tool: "edit_file",
-								args: "src/session/store.ts",
-								status: "ok",
-								output: "+12 −1",
-								expanded: true,
-								accent: T.ok,
-								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffPreview, {})
-							}),
-							isStreaming && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ToolCall, {
-								tool: "bash",
-								args: "pnpm vitest run session/",
-								status: "run",
-								output: "streaming…"
-							})
-						] }),
 						toolCalls.map((tc) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ToolCall, {
 							tool: tc.tool,
 							args: tc.args,
 							status: tc.status,
 							output: tc.output
 						}, tc.id)),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SteeringQueue, {}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 14 } })
-					]
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SteeringQueue, {})
+					] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 14 } })]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Composer, {
 					onCommandPalette: () => openOverlay("command-palette"),
@@ -13651,8 +13799,9 @@ v1.x.x — /plan as simple single-step wrapper`
 }
 //#endregion
 //#region src/screens/PromptTemplates.tsx
-function TemplateRow({ name, description, slash, active }) {
+function TemplateRow({ name, description, slash, active, onClick }) {
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		onClick,
 		style: {
 			padding: "10px 14px",
 			borderRadius: 5,
@@ -13695,7 +13844,79 @@ function TemplateRow({ name, description, slash, active }) {
 		})]
 	});
 }
+var BUILTIN_TEMPLATES = [
+	{
+		name: "commit",
+		slash: "/commit",
+		description: "Conventional commit from staged diff",
+		source: "builtin"
+	},
+	{
+		name: "pr",
+		slash: "/pr",
+		description: "GitHub pull request description",
+		source: "builtin"
+	},
+	{
+		name: "plan",
+		slash: "/plan",
+		description: "Multi-step task plan",
+		source: "builtin"
+	},
+	{
+		name: "review",
+		slash: "/review",
+		description: "Code review with suggestions",
+		source: "builtin"
+	},
+	{
+		name: "test",
+		slash: "/test",
+		description: "Generate test cases",
+		source: "builtin"
+	},
+	{
+		name: "docs",
+		slash: "/docs",
+		description: "Generate JSDoc / docstrings",
+		source: "builtin"
+	},
+	{
+		name: "refactor",
+		slash: "/refactor",
+		description: "Refactor selected code",
+		source: "builtin"
+	},
+	{
+		name: "explain",
+		slash: "/explain",
+		description: "Explain code or error",
+		source: "builtin"
+	}
+];
 function PromptTemplates() {
+	const { commands, load } = useCommandsStore();
+	const [selected, setSelected] = (0, import_react.useState)(0);
+	const [query, setQuery] = (0, import_react.useState)("");
+	(0, import_react.useEffect)(() => {
+		load();
+	}, []);
+	const liveTemplates = (0, import_react.useMemo)(() => commands.filter((c) => c.source === "prompt").map((c) => ({
+		name: c.name,
+		slash: `/${c.name}`,
+		description: c.description ?? "",
+		source: "custom"
+	})), [commands]);
+	const allTemplates = (0, import_react.useMemo)(() => {
+		const all = [...BUILTIN_TEMPLATES, ...liveTemplates];
+		if (!query) return all;
+		const q = query.toLowerCase();
+		return all.filter((t) => t.name.includes(q) || t.description.toLowerCase().includes(q));
+	}, [liveTemplates, query]);
+	const current = allTemplates[selected];
+	const useTemplate = () => {
+		if (current) rpc.sendPrompt(current.slash);
+	};
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(PiWindow, {
 		title: "pi · /prompts",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SidebarMain, {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -13773,67 +13994,42 @@ function PromptTemplates() {
 								color: T.textMuted,
 								marginBottom: 10
 							},
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "⌕" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "search templates…" })]
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "⌕" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+								value: query,
+								onChange: (e) => {
+									setQuery(e.target.value);
+									setSelected(0);
+								},
+								placeholder: "search templates…",
+								style: {
+									background: "transparent",
+									border: "none",
+									outline: "none",
+									fontFamily: F.mono,
+									fontSize: 11,
+									color: T.text,
+									flex: 1
+								}
+							})]
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionLabel, { children: "built-in" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TemplateRow, {
-							name: "commit",
-							slash: "/commit",
-							description: "Conventional commit from staged diff",
-							active: true
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TemplateRow, {
-							name: "pr",
-							slash: "/pr",
-							description: "GitHub pull request description"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TemplateRow, {
-							name: "plan",
-							slash: "/plan",
-							description: "Multi-step task plan"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TemplateRow, {
-							name: "review",
-							slash: "/review",
-							description: "Code review with suggestions"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TemplateRow, {
-							name: "test",
-							slash: "/test",
-							description: "Generate test cases"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TemplateRow, {
-							name: "docs",
-							slash: "/docs",
-							description: "Generate JSDoc / docstrings"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TemplateRow, {
-							name: "refactor",
-							slash: "/refactor",
-							description: "Refactor selected code"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TemplateRow, {
-							name: "explain",
-							slash: "/explain",
-							description: "Explain code or error"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 8 } }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionLabel, { children: "custom" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TemplateRow, {
-							name: "deploy-check",
-							slash: "/deploy-check",
-							description: "Pre-deploy checklist"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TemplateRow, {
-							name: "sprint-summary",
-							slash: "/sprint-summary",
-							description: "Summarize sprint tickets"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TemplateRow, {
-							name: "arch-review",
-							slash: "/arch-review",
-							description: "Architecture review questions"
-						}),
+						allTemplates.filter((t) => t.source === "builtin").map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TemplateRow, {
+							name: t.name,
+							slash: t.slash,
+							description: t.description,
+							active: allTemplates.indexOf(t) === selected,
+							onClick: () => setSelected(allTemplates.indexOf(t))
+						}, t.name)),
+						liveTemplates.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 8 } }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionLabel, { children: "custom" }),
+							allTemplates.filter((t) => t.source === "custom").map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TemplateRow, {
+								name: t.name,
+								description: t.description,
+								active: allTemplates.indexOf(t) === selected,
+								onClick: () => setSelected(allTemplates.indexOf(t))
+							}, t.name))
+						] }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 							style: { marginTop: 10 },
 							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
@@ -13843,7 +14039,7 @@ function PromptTemplates() {
 							})
 						})
 					]
-				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 					style: {
 						flex: 1,
 						display: "flex",
@@ -13851,7 +14047,7 @@ function PromptTemplates() {
 						minWidth: 0,
 						background: T.bg
 					},
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					children: current ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						style: {
 							padding: "12px 18px",
 							borderBottom: `1px solid ${T.border}`,
@@ -13868,7 +14064,7 @@ function PromptTemplates() {
 									fontWeight: 500,
 									color: T.text
 								},
-								children: "commit"
+								children: current.name
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 								style: {
@@ -13876,13 +14072,13 @@ function PromptTemplates() {
 									fontSize: 11,
 									color: T.pi
 								},
-								children: "/commit"
+								children: current.slash
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pill, {
 								color: T.textFaint,
 								bg: "transparent",
 								border: T.border,
-								children: "built-in"
+								children: current.source
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 } }),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Kbd, { children: "↵" }),
@@ -13895,14 +14091,10 @@ function PromptTemplates() {
 								children: "use"
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
-								variant: "ghost",
-								icon: "✎",
-								children: "Edit"
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
-								variant: "ghost",
-								icon: "⊕",
-								children: "Duplicate"
+								variant: "primary",
+								icon: "↵",
+								onClick: useTemplate,
+								children: "Use"
 							})
 						]
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -13911,182 +14103,46 @@ function PromptTemplates() {
 							overflow: "auto",
 							padding: "18px 22px"
 						},
-						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-								style: {
-									fontFamily: F.mono,
-									fontSize: 10,
-									color: T.textFaint,
-									textTransform: "uppercase",
-									letterSpacing: .8,
-									marginBottom: 10
-								},
-								children: "template"
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-								style: {
-									background: T.bgPanel,
-									borderRadius: 6,
-									border: `1px solid ${T.border}`,
-									padding: "14px 16px",
-									marginBottom: 18
-								},
-								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("pre", {
-									style: {
-										fontFamily: F.mono,
-										fontSize: 12.5,
-										color: T.text,
-										lineHeight: 1.7,
-										margin: 0,
-										whiteSpace: "pre-wrap"
-									},
-									children: `Write a git commit message for the following diff.
-
-Follow Conventional Commits:
-  <type>(<scope>): <description>
-
-Types: feat, fix, docs, style, refactor, test, chore, perf
-
-{{#if staged_diff}}
-Staged diff:
-\`\`\`diff
-{{staged_diff}}
-\`\`\`
-{{else}}
-No staged changes. List the modified files and summarize
-what should be committed.
-{{/if}}
-
-Rules:
-- Subject line ≤ 72 chars
-- Imperative mood ("add", not "added")
-- No period at end of subject
-- If breaking change, add BREAKING CHANGE: in body
-{{#if emoji}}
-- Start subject with an emoji matching the type
-{{/if}}`
-								})
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-								style: {
-									fontFamily: F.mono,
-									fontSize: 10,
-									color: T.textFaint,
-									textTransform: "uppercase",
-									letterSpacing: .8,
-									marginBottom: 10
-								},
-								children: "variables"
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-								style: {
-									display: "grid",
-									gridTemplateColumns: "1fr 1fr",
-									gap: 8,
-									marginBottom: 18
-								},
-								children: [
-									[
-										"staged_diff",
-										"string",
-										"Output of git diff --staged",
-										true
-									],
-									[
-										"emoji",
-										"bool",
-										"Prepend emoji to commit type (default: true)",
-										false
-									],
-									[
-										"scope",
-										"string",
-										"Optional scope override",
-										false
-									],
-									[
-										"breaking",
-										"string",
-										"Breaking change description",
-										false
-									]
-								].map(([v, t, d, req]) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									style: {
-										padding: "10px 12px",
-										borderRadius: 5,
-										border: `1px solid ${T.border}`,
-										background: T.bgPanel
-									},
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-										style: {
-											display: "flex",
-											alignItems: "baseline",
-											gap: 6
-										},
-										children: [
-											/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-												style: {
-													fontFamily: F.mono,
-													fontSize: 12,
-													color: T.text
-												},
-												children: "{{" + v + "}}"
-											}),
-											/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pill, {
-												color: T.textFaint,
-												bg: "transparent",
-												border: T.border,
-												children: t
-											}),
-											req && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pill, {
-												color: T.warn,
-												bg: "rgba(251,189,35,0.1)",
-												border: "rgba(251,189,35,0.3)",
-												children: "required"
-											})
-										]
-									}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-										style: {
-											fontFamily: F.sans,
-											fontSize: 11.5,
-											color: T.textMuted,
-											marginTop: 4
-										},
-										children: d
-									})]
-								}, v))
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-								style: {
-									fontFamily: F.mono,
-									fontSize: 10,
-									color: T.textFaint,
-									textTransform: "uppercase",
-									letterSpacing: .8,
-									marginBottom: 10
-								},
-								children: "usage in chat"
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								style: {
-									background: T.bgPanel,
-									borderRadius: 5,
-									border: `1px solid ${T.border}`,
-									padding: "10px 14px",
-									fontFamily: F.mono,
-									fontSize: 12,
-									color: T.textDim
-								},
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									style: { color: T.pi },
-									children: "/commit"
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									style: { color: T.textMuted },
-									children: " — auto-fills staged_diff from git"
-								})]
-							})
-						]
-					})]
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							style: {
+								fontFamily: F.mono,
+								fontSize: 10,
+								color: T.textFaint,
+								textTransform: "uppercase",
+								letterSpacing: .8,
+								marginBottom: 10
+							},
+							children: "command"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							style: {
+								background: T.bgPanel,
+								borderRadius: 5,
+								border: `1px solid ${T.border}`,
+								padding: "10px 14px",
+								fontFamily: F.mono,
+								fontSize: 12,
+								color: T.textDim
+							},
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								style: { color: T.pi },
+								children: current.slash
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								style: { color: T.textMuted },
+								children: [" — ", current.description]
+							})]
+						})]
+					})] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						style: {
+							flex: 1,
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							fontFamily: F.sans,
+							fontSize: 13,
+							color: T.textFaint
+						},
+						children: "No templates match your search."
+					})
 				})]
 			})]
 		})]
@@ -14552,7 +14608,13 @@ function ContextEditor() {
 //#region src/store/settingsStore.ts
 var useSettingsStore = create((set) => ({
 	theme: "pi-dark",
-	setTheme: (theme) => set({ theme })
+	steeringMode: "all",
+	followUpMode: "all",
+	autoCompaction: true,
+	setTheme: (theme) => set({ theme }),
+	setSteeringMode: (mode) => set({ steeringMode: mode }),
+	setFollowUpMode: (mode) => set({ followUpMode: mode }),
+	setAutoCompaction: (v) => set({ autoCompaction: v })
 }));
 //#endregion
 //#region src/screens/ThemeCustomizer.tsx
@@ -15142,9 +15204,35 @@ function ThemeCustomizer() {
 //#endregion
 //#region src/screens/ShareExport.tsx
 function ShareExport() {
+	const { messages, toolCalls, usage, sessionStats } = useChatStore();
 	const gistUrl = "https://gist.github.com/earendil/a7b3f9e20c1d";
 	const copyUrl = () => navigator.clipboard?.writeText(gistUrl).catch(() => {});
 	const openUrl = (url) => window.open(url, "_blank");
+	const exportJson = () => {
+		const blob = new Blob([JSON.stringify({
+			messages,
+			toolCalls,
+			usage,
+			sessionStats
+		}, null, 2)], { type: "application/json" });
+		const a = document.createElement("a");
+		a.href = URL.createObjectURL(blob);
+		a.download = "pi-session.json";
+		a.click();
+		URL.revokeObjectURL(a.href);
+	};
+	const exportHtml = () => {
+		rpc.exportHtml();
+	};
+	const share = () => {
+		rpc.sendPrompt("/share");
+	};
+	const stats = sessionStats ?? {
+		messages: messages.length,
+		toolCalls: toolCalls.length,
+		tokens: usage.tokens,
+		cost: usage.cost
+	};
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(PiWindow, {
 		title: "pi · share",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SidebarMain, {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -15244,7 +15332,7 @@ function ShareExport() {
 											fontSize: 10.5,
 											color: T.textMuted
 										},
-										children: "Published as GitHub Gist · public · 3 min ago"
+										children: "Published as GitHub Gist · public"
 									})]
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
@@ -15272,39 +15360,14 @@ function ShareExport() {
 							},
 							children: "export options"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							style: {
 								display: "grid",
 								gridTemplateColumns: "1fr 1fr",
 								gap: 10,
 								marginBottom: 22
 							},
-							children: [
-								[
-									"markdown",
-									"⊞",
-									"Conversation as .md with code blocks and tool call summaries",
-									T.pi
-								],
-								[
-									"html",
-									"◉",
-									"Self-contained .html with syntax highlighting and the pi theme",
-									T.info
-								],
-								[
-									"json",
-									"◈",
-									"Raw session JSON — all messages, tool calls, usage metadata",
-									T.tool
-								],
-								[
-									"pdf",
-									"☐",
-									"Print-friendly PDF via headless Chrome (if installed)",
-									T.textDim
-								]
-							].map(([name, icon, desc, c]) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								style: {
 									padding: "14px 16px",
 									borderRadius: 6,
@@ -15325,9 +15388,9 @@ function ShareExport() {
 											style: {
 												fontFamily: F.mono,
 												fontSize: 18,
-												color: c
+												color: T.info
 											},
-											children: icon
+											children: "◉"
 										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 											style: {
 												fontFamily: F.mono,
@@ -15335,7 +15398,7 @@ function ShareExport() {
 												color: T.text,
 												fontWeight: 500
 											},
-											children: name
+											children: "html"
 										})]
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
@@ -15345,14 +15408,73 @@ function ShareExport() {
 											color: T.textDim,
 											flex: 1
 										},
-										children: desc
+										children: "Self-contained .html with syntax highlighting"
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Btn, {
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 										variant: "outline",
-										children: ["Export .", name === "html" ? "html" : name === "markdown" ? "md" : name === "json" ? "json" : "pdf"]
+										onClick: exportHtml,
+										children: "Export .html"
 									})
 								]
-							}, name))
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								style: {
+									padding: "14px 16px",
+									borderRadius: 6,
+									border: `1px solid ${T.border}`,
+									background: T.bgPanel,
+									display: "flex",
+									flexDirection: "column",
+									gap: 8
+								},
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											alignItems: "center",
+											gap: 8
+										},
+										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											style: {
+												fontFamily: F.mono,
+												fontSize: 18,
+												color: T.tool
+											},
+											children: "◈"
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+											style: {
+												fontFamily: F.mono,
+												fontSize: 12.5,
+												color: T.text,
+												fontWeight: 500
+											},
+											children: "json"
+										})]
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+										style: {
+											fontFamily: F.sans,
+											fontSize: 12,
+											color: T.textDim,
+											flex: 1
+										},
+										children: "Raw session JSON — messages, tool calls, usage"
+									}),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
+										variant: "outline",
+										onClick: exportJson,
+										children: "Export .json"
+									})
+								]
+							})]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							style: { marginBottom: 22 },
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
+								variant: "secondary",
+								icon: "☁",
+								onClick: share,
+								children: "Share as GitHub Gist (/share)"
+							})
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 							style: {
@@ -15375,79 +15497,40 @@ function ShareExport() {
 								style: {
 									background: T.bgPanel,
 									padding: "8px 14px",
-									borderBottom: `1px solid ${T.border}`,
-									display: "flex",
-									alignItems: "center",
-									gap: 8
+									borderBottom: `1px solid ${T.border}`
 								},
-								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 									style: {
 										fontFamily: F.mono,
 										fontSize: 11,
 										color: T.textMuted
 									},
-									children: "preview · gist.github.com/earendil/a7b3f9e20c1d"
+									children: ["preview · ", gistUrl]
 								})
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								style: {
 									background: "#181614",
 									padding: "18px 22px"
 								},
-								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-										style: {
-											fontFamily: F.mono,
-											fontSize: 11,
-											color: "#e8e0cc",
-											marginBottom: 6
-										},
-										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-											style: { color: "#8a7d64" },
-											children: "session: "
-										}), "refactor the auth module to use JWT"]
-									}),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-										style: {
-											fontFamily: F.mono,
-											fontSize: 11,
-											color: "#8a7d64",
-											marginBottom: 4
-										},
-										children: "user"
-									}),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-										style: {
-											background: "#1c1a13",
-											borderRadius: 4,
-											padding: "6px 10px",
-											marginBottom: 12,
-											fontFamily: F.mono,
-											fontSize: 11,
-											color: "#e8e0cc"
-										},
-										children: "refactor the auth module to use JWT"
-									}),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-										style: {
-											fontFamily: F.mono,
-											fontSize: 11,
-											color: "#f0a45a",
-											marginBottom: 4
-										},
-										children: "π assistant"
-									}),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-										style: {
-											background: "#15140f",
-											borderRadius: 4,
-											padding: "6px 10px",
-											fontFamily: F.mono,
-											fontSize: 11,
-											color: "#c4b896"
-										},
-										children: "I'll refactor the auth module to replace session cookies with JWT…"
-									})
-								]
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									style: {
+										fontFamily: F.mono,
+										fontSize: 11,
+										color: "#f0a45a",
+										marginBottom: 4
+									},
+									children: "π assistant"
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+									style: {
+										background: "#15140f",
+										borderRadius: 4,
+										padding: "6px 10px",
+										fontFamily: F.mono,
+										fontSize: 11,
+										color: "#c4b896"
+									},
+									children: "Ready to help with your project…"
+								})]
 							})]
 						})
 					]
@@ -15460,103 +15543,43 @@ function ShareExport() {
 						overflow: "auto",
 						padding: "16px 14px"
 					},
-					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						style: {
+							fontFamily: F.mono,
+							fontSize: 10,
+							color: T.textFaint,
+							textTransform: "uppercase",
+							letterSpacing: .8,
+							marginBottom: 10
+						},
+						children: "session info"
+					}), [
+						["messages", String(stats.messages ?? messages.length)],
+						["tool calls", String(stats.toolCalls ?? toolCalls.length)],
+						["tokens used", stats.tokens ? `${(Number(stats.tokens) / 1e3).toFixed(1)}k` : "—"],
+						["cost", stats.cost ? `$${Number(stats.cost).toFixed(3)}` : "—"]
+					].map(([k, v]) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							justifyContent: "space-between",
+							marginBottom: 7
+						},
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 							style: {
 								fontFamily: F.mono,
-								fontSize: 10,
-								color: T.textFaint,
-								textTransform: "uppercase",
-								letterSpacing: .8,
-								marginBottom: 10
+								fontSize: 10.5,
+								color: T.textMuted
 							},
-							children: "session info"
-						}),
-						[
-							["title", "JWT auth refactor"],
-							["messages", "47"],
-							["tool calls", "18"],
-							["tokens used", "128,420"],
-							["cost", "$0.42"],
-							["model", "claude-sonnet-4-5"],
-							["duration", "23 min"],
-							["created", "2025-01-18 14:32"]
-						].map(([k, v]) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							style: {
-								display: "flex",
-								justifyContent: "space-between",
-								marginBottom: 7
-							},
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								style: {
-									fontFamily: F.mono,
-									fontSize: 10.5,
-									color: T.textMuted
-								},
-								children: k
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								style: {
-									fontFamily: F.mono,
-									fontSize: 10.5,
-									color: T.text
-								},
-								children: v
-							})]
-						}, k)),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 14 } }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							children: k
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 							style: {
 								fontFamily: F.mono,
-								fontSize: 10,
-								color: T.textFaint,
-								textTransform: "uppercase",
-								letterSpacing: .8,
-								marginBottom: 10
+								fontSize: 10.5,
+								color: T.text
 							},
-							children: "gist settings"
-						}),
-						[
-							["visibility", "public"],
-							["format", "markdown + html"],
-							["include tools", "yes"],
-							["include usage", "yes"]
-						].map(([k, v]) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							style: {
-								display: "flex",
-								justifyContent: "space-between",
-								marginBottom: 7
-							},
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								style: {
-									fontFamily: F.mono,
-									fontSize: 10.5,
-									color: T.textMuted
-								},
-								children: k
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								style: {
-									fontFamily: F.mono,
-									fontSize: 10.5,
-									color: T.text
-								},
-								children: v
-							})]
-						}, k)),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 12 } }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
-							variant: "primary",
-							icon: "☁",
-							children: "Re-publish"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-							style: { marginTop: 6 },
-							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
-								variant: "ghost",
-								icon: "✕",
-								children: "Delete gist"
-							})
-						})
-					]
+							children: v
+						})]
+					}, k))]
 				})]
 			})]
 		})]
@@ -15605,7 +15628,9 @@ function DiffLine({ kind, text }) {
 	});
 }
 function ToolInspector() {
-	const { navigate } = useNav();
+	const { navigate, inspectToolId } = useNav();
+	const { toolCalls } = useChatStore();
+	const toolCall = inspectToolId ? toolCalls.find((tc) => tc.id === inspectToolId) : toolCalls[toolCalls.length - 1];
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(PiWindow, {
 		title: "pi · tool inspector",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SidebarMain, {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -15656,29 +15681,26 @@ function ToolInspector() {
 							fontSize: 11,
 							color: T.tool
 						},
-						children: "str_replace_based_edit_tool"
+						children: toolCall?.tool ?? "none selected"
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 } }),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Pill, {
-						color: T.ok,
-						bg: T.okBg,
-						border: "rgba(143,184,106,0.3)",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Dot, {
-							color: T.ok,
-							size: 5
-						}), " success"]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						style: {
-							fontFamily: F.mono,
-							fontSize: 10,
-							color: T.textFaint
-						},
-						children: "234ms"
-					}),
+					toolCall && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_jsx_runtime.Fragment, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Pill, {
+						color: toolCall.status === "ok" ? T.ok : toolCall.status === "err" ? T.err : T.warn,
+						bg: toolCall.status === "ok" ? T.okBg : toolCall.status === "err" ? T.errBg : `${T.warn}15`,
+						border: toolCall.status === "ok" ? "rgba(143,184,106,0.3)" : toolCall.status === "err" ? `${T.err}40` : `${T.warn}40`,
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Dot, {
+								color: toolCall.status === "ok" ? T.ok : toolCall.status === "err" ? T.err : T.warn,
+								size: 5
+							}),
+							" ",
+							toolCall.status === "run" ? "running" : toolCall.status
+						]
+					}) }),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
 						variant: "ghost",
 						icon: "←",
+						onClick: () => navigate("chat"),
 						children: "back to chat"
 					})
 				]
@@ -15723,12 +15745,7 @@ function ToolInspector() {
 									whiteSpace: "pre-wrap",
 									wordBreak: "break-all"
 								},
-								children: JSON.stringify({
-									command: "str_replace",
-									path: "/src/auth/jwt.ts",
-									old_str: "const token = generateToken(user.id);",
-									new_str: "const token = generateJWT(user.id, { expiresIn: '24h' });"
-								}, null, 2)
+								children: toolCall?.args ?? "(no tool selected)"
 							})
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
@@ -15746,10 +15763,10 @@ function ToolInspector() {
 							style: {
 								fontFamily: F.mono,
 								fontSize: 11,
-								color: T.ok,
+								color: toolCall?.status === "err" ? T.err : T.ok,
 								marginBottom: 14
 							},
-							children: "OK"
+							children: toolCall?.output ?? "(no output yet)"
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 							style: {
@@ -15762,36 +15779,17 @@ function ToolInspector() {
 							},
 							children: "timeline"
 						}),
-						[
-							["tool_call_start", "14:32:11.420"],
-							["file read", "14:32:11.425 (+5ms)"],
-							["str_replace", "14:32:11.540 (+120ms)"],
-							["file write", "14:32:11.641 (+101ms)"],
-							["tool_call_end", "14:32:11.654 (+234ms)"]
-						].map(([e, t]) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							style: {
-								display: "flex",
-								justifyContent: "space-between",
-								marginBottom: 5
-							},
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								style: {
-									fontFamily: F.mono,
-									fontSize: 10.5,
-									color: T.textDim
-								},
-								children: e
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								style: {
-									fontFamily: F.mono,
-									fontSize: 10.5,
-									color: T.textFaint
-								},
-								children: t
-							})]
-						}, e)),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { height: 12 } }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							style: {
+								fontFamily: F.mono,
+								fontSize: 10.5,
+								color: T.textDim,
+								marginBottom: 14,
+								lineHeight: 1.7
+							},
+							children: toolCall ? `tool_execution_start → running → tool_execution_end` : "(no timeline available)"
+						}),
+						toolCalls.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 							style: {
 								fontFamily: F.mono,
 								fontSize: 10,
@@ -15800,32 +15798,33 @@ function ToolInspector() {
 								letterSpacing: .8,
 								marginBottom: 8
 							},
-							children: "tool call #"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							children: "all tool calls"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 							style: {
 								display: "flex",
 								flexWrap: "wrap",
 								gap: 4
 							},
-							children: [...Array(18)].map((_, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							children: toolCalls.map((tc, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+								title: tc.tool,
+								onClick: () => {},
 								style: {
 									width: 26,
 									height: 26,
 									borderRadius: 4,
-									background: i === 11 ? T.tool : T.bgElev,
-									border: `1px solid ${i === 11 ? T.tool : T.border}`,
+									background: tc.id === toolCall?.id ? T.tool : T.bgElev,
+									border: `1px solid ${tc.id === toolCall?.id ? T.tool : T.border}`,
 									display: "flex",
 									alignItems: "center",
 									justifyContent: "center",
 									fontFamily: F.mono,
 									fontSize: 10,
-									color: i === 11 ? T.bg : T.textMuted,
+									color: tc.id === toolCall?.id ? T.bg : T.textMuted,
 									cursor: "pointer"
 								},
 								children: i + 1
-							}, i))
-						})
+							}, tc.id))
+						})] })
 					]
 				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					style: {
@@ -15850,29 +15849,49 @@ function ToolInspector() {
 									fontSize: 12.5,
 									color: T.text
 								},
-								children: "src/auth/jwt.ts"
+								children: toolCall?.tool ?? "No tool call selected"
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pill, {
+							toolCall && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pill, {
 								color: T.tool,
 								bg: `${T.tool}15`,
 								border: `${T.tool}40`,
-								children: "str_replace"
+								children: toolCall.tool
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 } }),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
-								variant: "ghost",
-								icon: "↗",
-								children: "Open in editor"
-							})
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 } })
 						]
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						style: {
 							flex: 1,
 							display: "flex",
 							minHeight: 0,
 							background: T.bg
 						},
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						children: toolCalls.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							style: {
+								flex: 1,
+								display: "flex",
+								alignItems: "center",
+								justifyContent: "center",
+								flexDirection: "column",
+								gap: 12
+							},
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								style: {
+									fontFamily: F.mono,
+									fontSize: 32,
+									color: T.textFaint,
+									opacity: .3
+								},
+								children: "⚒"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								style: {
+									fontFamily: F.sans,
+									fontSize: 13,
+									color: T.textFaint
+								},
+								children: "No tool calls in this session yet"
+							})]
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 							style: {
 								width: 38,
 								flexShrink: 0,
@@ -15882,8 +15901,8 @@ function ToolInspector() {
 								paddingTop: 14
 							},
 							children: [...Array(20)].map((_, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LineNo, {
-								n: i + 10,
-								highlight: i === 8
+								n: i + 1,
+								highlight: i === 5
 							}, i))
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							style: {
@@ -15894,70 +15913,22 @@ function ToolInspector() {
 							children: [
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
 									kind: " ",
-									text: "import { sign, verify } from 'jsonwebtoken';"
+									text: `tool: ${toolCall?.tool ?? ""}`
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
 									kind: " ",
-									text: "import { User } from '../types';"
+									text: `args: ${toolCall?.args ?? ""}`
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
 									kind: " ",
-									text: ""
+									text: `status: ${toolCall?.status ?? ""}`
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
 									kind: " ",
-									text: "const SECRET = process.env.JWT_SECRET!;"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
-									kind: " ",
-									text: ""
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
-									kind: " ",
-									text: "export function createSession(user: User) {"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
-									kind: " ",
-									text: "  const sessionId = crypto.randomUUID();"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
-									kind: " ",
-									text: "  const payload = { userId: user.id, sessionId };"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
-									kind: "-",
-									text: "  const token = generateToken(user.id);"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
-									kind: "+",
-									text: "  const token = generateJWT(user.id, { expiresIn: '24h' });"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
-									kind: " ",
-									text: "  return { token, sessionId };"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
-									kind: " ",
-									text: "}"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
-									kind: " ",
-									text: ""
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
-									kind: " ",
-									text: "export function verifyToken(token: string) {"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
-									kind: " ",
-									text: "  return verify(token, SECRET);"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(DiffLine, {
-									kind: " ",
-									text: "}"
+									text: `output: ${toolCall?.output ?? ""}`
 								})
 							]
-						})]
+						})] })
 					})]
 				})]
 			})]
@@ -16461,8 +16432,946 @@ function Steering() {
 	});
 }
 //#endregion
+//#region src/data/featureStatus.ts
+var PI_FEATURES = [
+	{
+		id: "chat-prompt",
+		category: "Chat",
+		name: "Send prompt",
+		description: "Send a user message to pi",
+		status: "implemented"
+	},
+	{
+		id: "chat-stream",
+		category: "Chat",
+		name: "Streaming response",
+		description: "Real-time streaming of assistant text",
+		status: "implemented"
+	},
+	{
+		id: "chat-tool-calls",
+		category: "Chat",
+		name: "Tool call display",
+		description: "Show read/bash/edit/write/grep/find/ls calls inline",
+		status: "implemented"
+	},
+	{
+		id: "chat-abort",
+		category: "Chat",
+		name: "Abort (Ctrl+C)",
+		description: "Send SIGINT to stop current operation",
+		status: "implemented"
+	},
+	{
+		id: "chat-steer",
+		category: "Chat",
+		name: "Steer mid-task",
+		description: "Inject steering message during run",
+		status: "implemented"
+	},
+	{
+		id: "chat-followup",
+		category: "Chat",
+		name: "Follow-up queue",
+		description: "Queue follow-up message after agent finishes",
+		status: "implemented"
+	},
+	{
+		id: "chat-multiline",
+		category: "Chat",
+		name: "Multi-line input",
+		description: "Shift+Enter for newlines in composer",
+		status: "implemented"
+	},
+	{
+		id: "chat-file-ref",
+		category: "Chat",
+		name: "File reference (@file)",
+		description: "Fuzzy-search project files with @ in editor",
+		status: "not-possible",
+		notes: "Terminal-specific feature (fuzzy overlay in TUI)"
+	},
+	{
+		id: "chat-path-complete",
+		category: "Chat",
+		name: "Tab path completion",
+		description: "Tab to complete file paths in editor",
+		status: "not-possible",
+		notes: "Terminal readline feature"
+	},
+	{
+		id: "chat-image-paste",
+		category: "Chat",
+		name: "Image paste",
+		description: "Paste images via Ctrl+V into context",
+		status: "not-possible",
+		notes: "Terminal drag-and-drop; RPC images field available but no file picker in UI"
+	},
+	{
+		id: "chat-shell-bang",
+		category: "Chat",
+		name: "Shell command (!cmd)",
+		description: "Run shell command and send output to model",
+		status: "not-possible",
+		notes: "Terminal-specific shorthand; use bash RPC instead"
+	},
+	{
+		id: "chat-ext-editor",
+		category: "Chat",
+		name: "External editor (Ctrl+G)",
+		description: "Open $VISUAL/$EDITOR to compose message",
+		status: "not-possible",
+		notes: "Terminal feature; not applicable to GUI textarea"
+	},
+	{
+		id: "model-switch",
+		category: "Model",
+		name: "Switch model (/model)",
+		description: "Pick any configured provider/model",
+		status: "implemented"
+	},
+	{
+		id: "model-cycle",
+		category: "Model",
+		name: "Cycle favorites (Ctrl+P)",
+		description: "Cycle through starred models",
+		status: "implemented"
+	},
+	{
+		id: "model-thinking",
+		category: "Model",
+		name: "Thinking level",
+		description: "Set off/minimal/low/medium/high/xhigh",
+		status: "not-yet"
+	},
+	{
+		id: "model-scoped",
+		category: "Model",
+		name: "Scoped model list",
+		description: "Enable/disable models for Ctrl+P cycling",
+		status: "not-yet"
+	},
+	{
+		id: "session-new",
+		category: "Session",
+		name: "New session (/new)",
+		description: "Start a fresh conversation",
+		status: "partial",
+		notes: "RPC available; no clear \"New\" button in main UI"
+	},
+	{
+		id: "session-resume",
+		category: "Session",
+		name: "Resume session (/resume)",
+		description: "Pick and continue a past session",
+		status: "partial",
+		notes: "Session list loads from FS; no full picker UI yet"
+	},
+	{
+		id: "session-tree",
+		category: "Session",
+		name: "Session tree (/tree)",
+		description: "Navigate tree of all turns and branches",
+		status: "partial",
+		notes: "Screen exists with mock data; needs real JSONL parsing"
+	},
+	{
+		id: "session-fork",
+		category: "Session",
+		name: "Fork (/fork)",
+		description: "Create new session from earlier user message",
+		status: "not-yet"
+	},
+	{
+		id: "session-clone",
+		category: "Session",
+		name: "Clone (/clone)",
+		description: "Duplicate active branch into new session",
+		status: "not-yet"
+	},
+	{
+		id: "session-name",
+		category: "Session",
+		name: "Name session (/name)",
+		description: "Set human-readable display name",
+		status: "not-yet"
+	},
+	{
+		id: "session-compact",
+		category: "Session",
+		name: "Compaction (/compact)",
+		description: "Summarize older context to free tokens",
+		status: "not-yet"
+	},
+	{
+		id: "session-export",
+		category: "Session",
+		name: "Export HTML (/export)",
+		description: "Export session to self-contained HTML",
+		status: "not-yet"
+	},
+	{
+		id: "session-share",
+		category: "Session",
+		name: "Share (/share)",
+		description: "Upload to GitHub Gist with shareable URL",
+		status: "partial",
+		notes: "UI exists; wire to /share prompt command"
+	},
+	{
+		id: "session-info",
+		category: "Session",
+		name: "Session info (/session)",
+		description: "Show file, ID, messages, tokens, cost",
+		status: "not-yet"
+	},
+	{
+		id: "context-agents-md",
+		category: "Context",
+		name: "AGENTS.md editor",
+		description: "Read/write AGENTS.md context files",
+		status: "implemented"
+	},
+	{
+		id: "context-system-md",
+		category: "Context",
+		name: "SYSTEM.md editor",
+		description: "Read/write SYSTEM.md prompt override",
+		status: "implemented"
+	},
+	{
+		id: "context-reload",
+		category: "Context",
+		name: "Reload (/reload)",
+		description: "Reload extensions, skills, and context files",
+		status: "not-yet"
+	},
+	{
+		id: "pkg-install",
+		category: "Packages",
+		name: "Install package",
+		description: "pi install npm:/git:/local:/url:",
+		status: "implemented"
+	},
+	{
+		id: "pkg-uninstall",
+		category: "Packages",
+		name: "Remove package",
+		description: "pi remove <package>",
+		status: "implemented"
+	},
+	{
+		id: "pkg-list",
+		category: "Packages",
+		name: "List packages",
+		description: "Show installed packages with metadata",
+		status: "partial",
+		notes: "Shows mock data; real list from ~/.pi/packages"
+	},
+	{
+		id: "pkg-update",
+		category: "Packages",
+		name: "Update packages",
+		description: "pi update [source|self|pi]",
+		status: "not-yet"
+	},
+	{
+		id: "pkg-config",
+		category: "Packages",
+		name: "Configure package",
+		description: "Enable/disable per-package resources",
+		status: "not-yet"
+	},
+	{
+		id: "custom-themes",
+		category: "Customization",
+		name: "Theme gallery",
+		description: "Browse and apply built-in and installed themes",
+		status: "partial",
+		notes: "Gallery shown; load installed themes from FS"
+	},
+	{
+		id: "custom-prompts",
+		category: "Customization",
+		name: "Prompt templates",
+		description: "List, create, and expand /template commands",
+		status: "partial",
+		notes: "Static list shown; needs live data from get_commands RPC"
+	},
+	{
+		id: "custom-extensions",
+		category: "Customization",
+		name: "Extension detail",
+		description: "View extension README, tools, commands",
+		status: "partial",
+		notes: "Detail screen exists; hardcoded to plan-mode"
+	},
+	{
+		id: "custom-skills",
+		category: "Customization",
+		name: "Skills",
+		description: "List loaded skills from get_commands (source=skill)",
+		status: "not-yet"
+	},
+	{
+		id: "settings-thinking",
+		category: "Settings",
+		name: "Thinking level",
+		description: "off / minimal / low / medium / high / xhigh",
+		status: "not-yet"
+	},
+	{
+		id: "settings-steering-mode",
+		category: "Settings",
+		name: "Steering mode",
+		description: "all / one-at-a-time delivery",
+		status: "not-yet"
+	},
+	{
+		id: "settings-followup-mode",
+		category: "Settings",
+		name: "Follow-up mode",
+		description: "all / one-at-a-time delivery",
+		status: "not-yet"
+	},
+	{
+		id: "settings-auto-compact",
+		category: "Settings",
+		name: "Auto-compaction",
+		description: "Enable/disable automatic context compaction",
+		status: "not-yet"
+	},
+	{
+		id: "settings-keybindings",
+		category: "Settings",
+		name: "Keybindings (/hotkeys)",
+		description: "Show keyboard shortcuts reference",
+		status: "not-yet",
+		notes: "TUI overlay not applicable; could show static reference"
+	},
+	{
+		id: "perm-prompt",
+		category: "Permissions",
+		name: "Permission prompt",
+		description: "Allow/deny dangerous tool executions",
+		status: "partial",
+		notes: "UI exists and sends correct RPC; missing permission_request event listener to auto-show overlay"
+	},
+	{
+		id: "auth-login",
+		category: "Auth",
+		name: "Provider login (/login)",
+		description: "OAuth or API key authentication",
+		status: "not-yet",
+		notes: "Onboarding screen shows providers; no real auth flow"
+	},
+	{
+		id: "auth-logout",
+		category: "Auth",
+		name: "Provider logout (/logout)",
+		description: "Remove OAuth/key credentials",
+		status: "not-yet"
+	},
+	{
+		id: "mode-interactive",
+		category: "Mode",
+		name: "Interactive (RPC)",
+		description: "Full chat UI over pi --mode rpc",
+		status: "implemented"
+	},
+	{
+		id: "mode-print",
+		category: "Mode",
+		name: "Print/JSON mode",
+		description: "pi -p \"query\" one-shot output",
+		status: "not-possible",
+		notes: "piui is an interactive UI; -p mode is terminal/script only"
+	},
+	{
+		id: "mode-sdk",
+		category: "Mode",
+		name: "SDK mode",
+		description: "Embed pi in Node.js apps",
+		status: "not-possible",
+		notes: "piui uses subprocess RPC instead of direct SDK"
+	}
+];
+//#endregion
+//#region src/screens/FeatureStatus.tsx
+var STATUS_COLORS = {
+	implemented: T.ok,
+	partial: T.warn,
+	"not-yet": T.pi,
+	"not-possible": T.textMuted
+};
+var STATUS_LABELS = {
+	implemented: "implemented",
+	partial: "partial",
+	"not-yet": "not yet",
+	"not-possible": "not possible"
+};
+function StatusDot({ status }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: {
+		display: "inline-block",
+		width: 8,
+		height: 8,
+		borderRadius: "50%",
+		background: STATUS_COLORS[status],
+		marginRight: 8,
+		flexShrink: 0
+	} });
+}
+function FeatureRow({ feature }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		style: {
+			display: "flex",
+			alignItems: "flex-start",
+			gap: 10,
+			padding: "7px 0",
+			borderBottom: `1px solid ${T.borderDim}`
+		},
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusDot, { status: feature.status }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			style: {
+				flex: 1,
+				minWidth: 0
+			},
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					style: {
+						display: "flex",
+						alignItems: "baseline",
+						gap: 8
+					},
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						style: {
+							fontFamily: F.mono,
+							fontSize: 12.5,
+							color: T.text,
+							fontWeight: 500
+						},
+						children: feature.name
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						style: {
+							fontFamily: F.mono,
+							fontSize: 10,
+							color: STATUS_COLORS[feature.status]
+						},
+						children: STATUS_LABELS[feature.status]
+					})]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					style: {
+						fontFamily: F.sans,
+						fontSize: 12,
+						color: T.textDim,
+						marginTop: 2
+					},
+					children: feature.description
+				}),
+				feature.notes && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					style: {
+						fontFamily: F.mono,
+						fontSize: 10.5,
+						color: T.textFaint,
+						marginTop: 3
+					},
+					children: feature.notes
+				})
+			]
+		})]
+	});
+}
+function SummaryPill({ status, count }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		style: {
+			display: "inline-flex",
+			alignItems: "center",
+			gap: 6,
+			padding: "4px 10px",
+			borderRadius: 4,
+			border: `1px solid ${STATUS_COLORS[status]}40`,
+			background: `${STATUS_COLORS[status]}12`,
+			fontFamily: F.mono,
+			fontSize: 11
+		},
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+			style: {
+				color: STATUS_COLORS[status],
+				fontWeight: 600
+			},
+			children: count
+		}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+			style: { color: T.textDim },
+			children: STATUS_LABELS[status]
+		})]
+	});
+}
+function FeatureStatus() {
+	const [query, setQuery] = (0, import_react.useState)("");
+	const [collapsedCategories, setCollapsedCategories] = (0, import_react.useState)(/* @__PURE__ */ new Set());
+	const filtered = (0, import_react.useMemo)(() => {
+		if (!query) return PI_FEATURES;
+		const q = query.toLowerCase();
+		return PI_FEATURES.filter((f) => f.name.toLowerCase().includes(q) || f.description.toLowerCase().includes(q) || f.category.toLowerCase().includes(q));
+	}, [query]);
+	const categorized = (0, import_react.useMemo)(() => {
+		const map = /* @__PURE__ */ new Map();
+		for (const f of filtered) {
+			if (!map.has(f.category)) map.set(f.category, []);
+			map.get(f.category).push(f);
+		}
+		return map;
+	}, [filtered]);
+	const counts = (0, import_react.useMemo)(() => {
+		const c = {
+			implemented: 0,
+			partial: 0,
+			"not-yet": 0,
+			"not-possible": 0
+		};
+		for (const f of PI_FEATURES) c[f.status]++;
+		return c;
+	}, []);
+	const toggleCategory = (cat) => {
+		setCollapsedCategories((prev) => {
+			const next = new Set(prev);
+			if (next.has(cat)) next.delete(cat);
+			else next.add(cat);
+			return next;
+		});
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(PiWindow, {
+		title: "pi · feature status",
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SidebarMain, {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			style: {
+				flex: 1,
+				display: "flex",
+				flexDirection: "column",
+				minWidth: 0
+			},
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				style: {
+					padding: "14px 24px 12px",
+					borderBottom: `1px solid ${T.border}`
+				},
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							alignItems: "center",
+							gap: 12,
+							marginBottom: 12
+						},
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								style: {
+									fontFamily: F.mono,
+									fontSize: 11,
+									color: T.pi
+								},
+								children: "◎"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								style: {
+									fontFamily: F.sans,
+									fontSize: 15,
+									fontWeight: 500,
+									color: T.text
+								},
+								children: "Feature Status"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								style: {
+									fontFamily: F.mono,
+									fontSize: 10.5,
+									color: T.textFaint
+								},
+								children: [PI_FEATURES.length, " features tracked"]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 } }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
+								variant: "ghost",
+								icon: "↗",
+								onClick: () => window.open("https://pi.dev/docs/latest", "_blank"),
+								children: "pi.dev/docs"
+							})
+						]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							gap: 8,
+							marginBottom: 12,
+							flexWrap: "wrap"
+						},
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SummaryPill, {
+								status: "implemented",
+								count: counts.implemented
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SummaryPill, {
+								status: "partial",
+								count: counts.partial
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SummaryPill, {
+								status: "not-yet",
+								count: counts["not-yet"]
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SummaryPill, {
+								status: "not-possible",
+								count: counts["not-possible"]
+							})
+						]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							alignItems: "center",
+							gap: 8,
+							padding: "6px 10px",
+							borderRadius: 5,
+							border: `1px solid ${T.border}`,
+							background: T.bgInput
+						},
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							style: {
+								fontFamily: F.mono,
+								fontSize: 11,
+								color: T.textMuted
+							},
+							children: "⌕"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+							value: query,
+							onChange: (e) => setQuery(e.target.value),
+							placeholder: "search features…",
+							style: {
+								flex: 1,
+								background: "transparent",
+								border: "none",
+								outline: "none",
+								fontFamily: F.mono,
+								fontSize: 12,
+								color: T.text
+							}
+						})]
+					})
+				]
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				style: {
+					flex: 1,
+					overflow: "auto",
+					padding: "16px 24px",
+					background: T.bg
+				},
+				children: [categorized.size === 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					style: {
+						fontFamily: F.mono,
+						fontSize: 12,
+						color: T.textFaint,
+						padding: "20px 0"
+					},
+					children: "No features match your search."
+				}), [...categorized.entries()].map(([category, features]) => {
+					const isCollapsed = collapsedCategories.has(category);
+					return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: { marginBottom: 20 },
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							onClick: () => toggleCategory(category),
+							style: {
+								display: "flex",
+								alignItems: "center",
+								gap: 8,
+								padding: "6px 0",
+								marginBottom: 4,
+								cursor: "pointer",
+								userSelect: "none"
+							},
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									style: {
+										fontFamily: F.mono,
+										fontSize: 10,
+										color: T.textFaint
+									},
+									children: isCollapsed ? "▸" : "▾"
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									style: {
+										fontFamily: F.mono,
+										fontSize: 11,
+										color: T.pi,
+										textTransform: "uppercase",
+										letterSpacing: .8,
+										fontWeight: 600
+									},
+									children: category
+								}),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+									style: {
+										fontFamily: F.mono,
+										fontSize: 10,
+										color: T.textFaint
+									},
+									children: features.length
+								})
+							]
+						}), !isCollapsed && features.map((f) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FeatureRow, { feature: f }, f.id))]
+					}, category);
+				})]
+			})]
+		})]
+	});
+}
+//#endregion
+//#region src/screens/Settings.tsx
+var THINKING_LEVELS = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh"
+];
+function SectionHeader({ title }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		style: {
+			fontFamily: F.mono,
+			fontSize: 10,
+			color: T.textFaint,
+			textTransform: "uppercase",
+			letterSpacing: .8,
+			marginBottom: 10,
+			marginTop: 20
+		},
+		children: title
+	});
+}
+function ToggleOption({ label, value, selected, onClick }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+		onClick,
+		style: {
+			padding: "6px 14px",
+			borderRadius: 4,
+			cursor: "pointer",
+			background: selected ? T.pi : T.bgElev,
+			border: `1px solid ${selected ? T.pi : T.border}`,
+			color: selected ? "#1a1408" : T.textDim,
+			fontFamily: F.mono,
+			fontSize: 11.5,
+			fontWeight: selected ? 600 : 400
+		},
+		"aria-label": label,
+		"aria-pressed": selected,
+		children: value
+	});
+}
+function Settings() {
+	const { navigate } = useNav();
+	const { thinkingLevel, setThinkingLevel } = useModelStore();
+	const { steeringMode, followUpMode, autoCompaction, setSteeringMode, setFollowUpMode, setAutoCompaction } = useSettingsStore();
+	const isPiAvailable = !!window.pi;
+	const handleThinking = (level) => {
+		setThinkingLevel(level);
+		rpc.setThinkingLevel(level);
+	};
+	const handleSteeringMode = (mode) => {
+		setSteeringMode(mode);
+		rpc.setSteeringMode(mode);
+	};
+	const handleFollowUpMode = (mode) => {
+		setFollowUpMode(mode);
+		rpc.setFollowUpMode(mode);
+	};
+	const handleAutoCompaction = (v) => {
+		setAutoCompaction(v);
+		rpc.setAutoCompaction(v);
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(PiWindow, {
+		title: "pi · settings",
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SidebarMain, {}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			style: {
+				flex: 1,
+				display: "flex",
+				flexDirection: "column",
+				minWidth: 0
+			},
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				style: {
+					padding: "14px 24px 12px",
+					borderBottom: `1px solid ${T.border}`,
+					display: "flex",
+					alignItems: "center",
+					gap: 10
+				},
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						style: {
+							fontFamily: F.mono,
+							fontSize: 11,
+							color: T.pi
+						},
+						children: "⚙"
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						style: {
+							fontFamily: F.sans,
+							fontSize: 15,
+							fontWeight: 500,
+							color: T.text
+						},
+						children: "Settings"
+					}),
+					!isPiAvailable && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						style: {
+							fontFamily: F.mono,
+							fontSize: 10.5,
+							color: T.textMuted
+						},
+						children: "(pi not running — controls rendered but inactive)"
+					})
+				]
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				style: {
+					flex: 1,
+					overflow: "auto",
+					padding: "16px 32px",
+					background: T.bg
+				},
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHeader, { title: "Thinking Level" }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+						style: {
+							fontFamily: F.sans,
+							fontSize: 12,
+							color: T.textDim,
+							marginBottom: 10
+						},
+						children: "Control how much reasoning budget pi uses before responding."
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						style: {
+							display: "flex",
+							gap: 6,
+							flexWrap: "wrap",
+							marginBottom: 8
+						},
+						children: THINKING_LEVELS.map((level) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ToggleOption, {
+							label: `Set thinking level to ${level}`,
+							value: level,
+							selected: thinkingLevel === level,
+							onClick: () => handleThinking(level)
+						}, level))
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHeader, { title: "Steering Mode" }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+						style: {
+							fontFamily: F.sans,
+							fontSize: 12,
+							color: T.textDim,
+							marginBottom: 10
+						},
+						children: "How steering messages are delivered when pi is running."
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							gap: 6
+						},
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ToggleOption, {
+							label: "Deliver all steering messages",
+							value: "all",
+							selected: steeringMode === "all",
+							onClick: () => handleSteeringMode("all")
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ToggleOption, {
+							label: "Deliver one steering message at a time",
+							value: "one-at-a-time",
+							selected: steeringMode === "one-at-a-time",
+							onClick: () => handleSteeringMode("one-at-a-time")
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHeader, { title: "Follow-up Mode" }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+						style: {
+							fontFamily: F.sans,
+							fontSize: 12,
+							color: T.textDim,
+							marginBottom: 10
+						},
+						children: "How queued follow-up messages are processed after pi finishes."
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							gap: 6
+						},
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ToggleOption, {
+							label: "Process all follow-up messages",
+							value: "all",
+							selected: followUpMode === "all",
+							onClick: () => handleFollowUpMode("all")
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ToggleOption, {
+							label: "Process one follow-up at a time",
+							value: "one-at-a-time",
+							selected: followUpMode === "one-at-a-time",
+							onClick: () => handleFollowUpMode("one-at-a-time")
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHeader, { title: "Auto-Compaction" }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+						style: {
+							fontFamily: F.sans,
+							fontSize: 12,
+							color: T.textDim,
+							marginBottom: 10
+						},
+						children: "Automatically summarize older context when approaching the token limit."
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							gap: 6
+						},
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ToggleOption, {
+							label: "Enable auto-compaction",
+							value: "enabled",
+							selected: autoCompaction,
+							onClick: () => handleAutoCompaction(true)
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ToggleOption, {
+							label: "Disable auto-compaction",
+							value: "disabled",
+							selected: !autoCompaction,
+							onClick: () => handleAutoCompaction(false)
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHeader, { title: "Session Directory" }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						style: {
+							fontFamily: F.mono,
+							fontSize: 11.5,
+							color: T.textDim,
+							padding: "8px 12px",
+							borderRadius: 5,
+							border: `1px solid ${T.border}`,
+							background: T.bgPanel,
+							marginBottom: 8
+						},
+						children: "~/.pi/agent/sessions/"
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionHeader, { title: "Customize" }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Btn, {
+						variant: "outline",
+						icon: "◉",
+						onClick: () => navigate("theme"),
+						children: "Open Theme Customizer"
+					})
+				]
+			})]
+		})]
+	});
+}
+//#endregion
 //#region src/screens/CommandPalette.tsx
-var COMMANDS = [
+var BUILTIN_COMMANDS = [
 	{
 		cmd: "/commit",
 		desc: "Generate a conventional commit from staged diff",
@@ -16534,8 +17443,8 @@ var COMMANDS = [
 		category: "session"
 	},
 	{
-		cmd: "/reload",
-		desc: "Reload AGENTS.md context files",
+		cmd: "/compact",
+		desc: "Compact session context",
 		category: "session"
 	},
 	{
@@ -16551,6 +17460,16 @@ var COMMANDS = [
 	{
 		cmd: "/prompts",
 		desc: "Manage prompt templates",
+		category: "settings"
+	},
+	{
+		cmd: "/features",
+		desc: "View feature status dashboard",
+		category: "settings"
+	},
+	{
+		cmd: "/settings",
+		desc: "Open settings",
 		category: "settings"
 	},
 	{
@@ -16571,10 +17490,37 @@ var categoryColor = {
 	code: "#c79bd6",
 	session: "#fbbd23",
 	settings: "#f0a45a",
-	debug: "#e05c5c"
+	debug: "#e05c5c",
+	extension: "#5baaed",
+	prompt: "#c79bd6",
+	skill: "#8fb86a"
 };
 function CommandPalette() {
 	const { closeOverlay, navigate } = useNav();
+	const { commands: liveCommands, load } = useCommandsStore();
+	const [query, setQuery] = (0, import_react.useState)("");
+	const [selectedIdx, setSelectedIdx] = (0, import_react.useState)(0);
+	const inputRef = (0, import_react.useRef)(null);
+	(0, import_react.useEffect)(() => {
+		load();
+		inputRef.current?.focus();
+	}, []);
+	const allCommands = (0, import_react.useMemo)(() => {
+		const live = liveCommands.map((c) => ({
+			cmd: `/${c.name}`,
+			desc: c.description ?? "",
+			category: c.source
+		}));
+		return [...BUILTIN_COMMANDS, ...live];
+	}, [liveCommands]);
+	const filtered = (0, import_react.useMemo)(() => {
+		if (!query) return allCommands;
+		const q = query.toLowerCase();
+		return allCommands.filter((c) => c.cmd.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q));
+	}, [allCommands, query]);
+	(0, import_react.useEffect)(() => {
+		setSelectedIdx(0);
+	}, [query]);
 	const handleSelect = (cmd) => {
 		closeOverlay();
 		if (cmd === "/model") navigate("model");
@@ -16586,6 +17532,23 @@ function CommandPalette() {
 		else if (cmd === "/prompts") navigate("prompts");
 		else if (cmd === "/inspect") navigate("inspect");
 		else if (cmd === "/steer") navigate("steering");
+		else if (cmd === "/features") navigate("features");
+		else if (cmd === "/settings") navigate("settings");
+		else if (cmd === "/abort") window.pi?.abort();
+		else if (cmd === "/compact") rpc.compact();
+		else if (cmd === "/new") rpc.newSession();
+		else rpc.sendPrompt(cmd);
+	};
+	const onKeyDown = (e) => {
+		if (e.key === "ArrowDown") {
+			e.preventDefault();
+			setSelectedIdx((i) => Math.min(i + 1, filtered.length - 1));
+		} else if (e.key === "ArrowUp") {
+			e.preventDefault();
+			setSelectedIdx((i) => Math.max(i - 1, 0));
+		} else if (e.key === "Enter") {
+			if (filtered[selectedIdx]) handleSelect(filtered[selectedIdx].cmd);
+		} else if (e.key === "Escape") closeOverlay();
 	};
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 		style: {
@@ -16610,6 +17573,7 @@ function CommandPalette() {
 				boxShadow: `0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px ${T.piBg}`
 			},
 			onClick: (e) => e.stopPropagation(),
+			onKeyDown,
 			children: [
 				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					style: {
@@ -16628,21 +17592,21 @@ function CommandPalette() {
 							},
 							children: "/"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+							ref: inputRef,
+							value: query,
+							onChange: (e) => setQuery(e.target.value),
+							placeholder: "type to filter commands…",
 							style: {
+								flex: 1,
+								background: "transparent",
+								border: "none",
+								outline: "none",
 								fontFamily: F.mono,
 								fontSize: 13,
-								color: T.text,
-								flex: 1
+								color: T.text
 							},
-							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { style: {
-								display: "inline-block",
-								width: 7,
-								height: 14,
-								background: T.pi,
-								verticalAlign: "text-bottom",
-								animation: "pi-blink 1s steps(2) infinite"
-							} })
+							autoFocus: true
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Kbd, { children: "↑↓" }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
@@ -16673,12 +17637,24 @@ function CommandPalette() {
 						})
 					]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					style: {
 						maxHeight: 420,
 						overflow: "auto"
 					},
-					children: COMMANDS.map((item, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					children: [filtered.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						style: {
+							padding: "16px",
+							fontFamily: F.mono,
+							fontSize: 12,
+							color: T.textFaint
+						},
+						children: [
+							"No commands match \"",
+							query,
+							"\""
+						]
+					}), filtered.map((item, i) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						onClick: () => handleSelect(item.cmd),
 						style: {
 							display: "flex",
@@ -16687,14 +17663,9 @@ function CommandPalette() {
 							padding: "9px 16px",
 							borderBottom: `1px solid ${T.borderDim}`,
 							cursor: "pointer",
-							background: i === 0 ? T.bgElev : "transparent"
+							background: i === selectedIdx ? T.bgElev : "transparent"
 						},
-						onMouseEnter: (e) => {
-							e.currentTarget.style.background = T.bgElev;
-						},
-						onMouseLeave: (e) => {
-							e.currentTarget.style.background = i === 0 ? T.bgElev : "transparent";
-						},
+						onMouseEnter: () => setSelectedIdx(i),
 						children: [
 							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 								style: {
@@ -16722,7 +17693,7 @@ function CommandPalette() {
 								children: item.category
 							})
 						]
-					}, item.cmd))
+					}, `${item.cmd}-${i}`))]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					style: {
@@ -16737,7 +17708,7 @@ function CommandPalette() {
 						color: T.textFaint
 					},
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [COMMANDS.length, " commands · type to filter"] }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [filtered.length, " commands"] }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { style: { flex: 1 } }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "from packages, built-ins, and prompt templates" })
 					]
@@ -16750,37 +17721,46 @@ function CommandPalette() {
 //#region src/screens/PermissionPrompt.tsx
 function PermissionPrompt() {
 	const { closeOverlay } = useNav();
+	const { current, clearRequest } = usePermissionStore();
 	const errBorder = "rgba(226,107,94,0.35)";
+	const close = () => {
+		clearRequest();
+		closeOverlay();
+	};
 	const allowOnce = () => {
 		window.pi?.send({
 			type: "permission_response",
+			id: current?.id,
 			allowed: true,
 			remember: false
 		});
-		closeOverlay();
+		close();
 	};
 	const allowAlways = () => {
 		window.pi?.send({
 			type: "permission_response",
+			id: current?.id,
 			allowed: true,
 			remember: true
 		});
-		closeOverlay();
+		close();
 	};
 	const deny = () => {
 		window.pi?.send({
 			type: "permission_response",
+			id: current?.id,
 			allowed: false
 		});
-		closeOverlay();
+		close();
 	};
 	const denyAbort = () => {
 		window.pi?.send({
 			type: "permission_response",
+			id: current?.id,
 			allowed: false
 		});
 		window.pi?.abort();
-		closeOverlay();
+		close();
 	};
 	(0, import_react.useEffect)(() => {
 		const onKey = (e) => {
@@ -16791,7 +17771,11 @@ function PermissionPrompt() {
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, []);
+	}, [current]);
+	const command = current?.command ?? "unknown command";
+	const description = current?.description ?? "pi wants to execute a potentially dangerous operation.";
+	const level = current?.level ?? "dangerous";
+	const tool = current?.tool ?? "bash";
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 		style: {
 			position: "fixed",
@@ -16803,7 +17787,7 @@ function PermissionPrompt() {
 			backdropFilter: "blur(4px)",
 			zIndex: 100
 		},
-		onClick: closeOverlay,
+		onClick: close,
 		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 			style: {
 				width: 480,
@@ -16864,29 +17848,16 @@ function PermissionPrompt() {
 							padding: "10px 14px",
 							marginBottom: 14
 						},
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 							style: {
 								fontFamily: F.mono,
 								fontSize: 13,
 								color: T.text
 							},
-							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									style: { color: T.err },
-									children: "rm"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									style: { color: T.textMuted },
-									children: " -rf"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									style: { color: T.warn },
-									children: " ./dist"
-								})
-							]
+							children: command
 						})
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						style: {
 							fontFamily: F.sans,
 							fontSize: 12.5,
@@ -16894,17 +17865,7 @@ function PermissionPrompt() {
 							lineHeight: 1.6,
 							marginBottom: 16
 						},
-						children: [
-							"This command will permanently delete the ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", {
-								style: {
-									fontFamily: F.mono,
-									color: T.text
-								},
-								children: "./dist"
-							}),
-							" directory and all its contents. This action cannot be undone."
-						]
+						children: description
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						style: {
@@ -16914,7 +17875,7 @@ function PermissionPrompt() {
 							padding: "10px 14px",
 							marginBottom: 18
 						},
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							style: {
 								fontFamily: F.mono,
 								fontSize: 10,
@@ -16923,24 +17884,18 @@ function PermissionPrompt() {
 								letterSpacing: .8,
 								marginBottom: 6
 							},
-							children: "dangerous · shell:run · destructive"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							children: [
+								level,
+								" · ",
+								tool
+							]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 							style: {
 								fontFamily: F.sans,
 								fontSize: 12,
 								color: T.textDim
 							},
-							children: [
-								"The path ",
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", {
-									style: {
-										fontFamily: F.mono,
-										color: T.text
-									},
-									children: "./dist"
-								}),
-								" is not on the allow-list in AGENTS.md. Approve once, always, or deny."
-							]
+							children: "Approve once, always, or deny this request."
 						})]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -17005,10 +17960,13 @@ function AppRouter() {
 		const cleanupEvents = setupEventHandler();
 		const cleanupNav = window.pi?.onNavigate((s) => navigate(s));
 		const cleanupOverlay = window.pi?.onOverlay((o) => openOverlay(o));
+		const onPermission = () => openOverlay("permission-prompt");
+		window.addEventListener("pi:permission-request", onPermission);
 		return () => {
 			cleanupEvents?.();
 			cleanupNav?.();
 			cleanupOverlay?.();
+			window.removeEventListener("pi:permission-request", onPermission);
 		};
 	}, []);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -17030,7 +17988,9 @@ function AppRouter() {
 				theme: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ThemeCustomizer, {}),
 				share: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShareExport, {}),
 				inspect: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ToolInspector, {}),
-				steering: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Steering, {})
+				steering: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Steering, {}),
+				features: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FeatureStatus, {}),
+				settings: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Settings, {})
 			}[screen] ?? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(MainChat, {}),
 			overlay === "command-palette" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CommandPalette, {}),
 			overlay === "permission-prompt" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(PermissionPrompt, {})

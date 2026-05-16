@@ -1,8 +1,11 @@
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { T, F } from '../tokens';
 import { Pill, Kbd } from '../components/primitives';
 import { useNav } from '../context/NavContext';
+import { useCommandsStore } from '../store/commandsStore';
+import { rpc } from '../lib/rpcClient';
 
-const COMMANDS = [
+const BUILTIN_COMMANDS = [
   { cmd: '/commit', desc: 'Generate a conventional commit from staged diff', category: 'git' },
   { cmd: '/pr', desc: 'Write a GitHub pull request description', category: 'git' },
   { cmd: '/plan', desc: 'Create a multi-step execution plan', category: 'planning' },
@@ -17,10 +20,12 @@ const COMMANDS = [
   { cmd: '/steer', desc: 'Inject steering message into current run', category: 'session' },
   { cmd: '/abort', desc: 'Abort current run', category: 'session' },
   { cmd: '/new', desc: 'Start new session', category: 'session' },
-  { cmd: '/reload', desc: 'Reload AGENTS.md context files', category: 'session' },
+  { cmd: '/compact', desc: 'Compact session context', category: 'session' },
   { cmd: '/theme', desc: 'Open theme customizer', category: 'settings' },
   { cmd: '/packages', desc: 'Browse and manage packages', category: 'settings' },
   { cmd: '/prompts', desc: 'Manage prompt templates', category: 'settings' },
+  { cmd: '/features', desc: 'View feature status dashboard', category: 'settings' },
+  { cmd: '/settings', desc: 'Open settings', category: 'settings' },
   { cmd: '/inspect', desc: 'Inspect last tool call', category: 'debug' },
   { cmd: '/tree', desc: 'View session tree navigator', category: 'debug' },
 ];
@@ -28,10 +33,39 @@ const COMMANDS = [
 const categoryColor: Record<string, string> = {
   git: '#8fb86a', planning: '#f0a45a', review: '#5baaed',
   code: '#c79bd6', session: '#fbbd23', settings: '#f0a45a', debug: '#e05c5c',
+  extension: '#5baaed', prompt: '#c79bd6', skill: '#8fb86a',
 };
 
 export function CommandPalette() {
   const { closeOverlay, navigate } = useNav();
+  const { commands: liveCommands, load } = useCommandsStore();
+  const [query, setQuery] = useState('');
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    load();
+    inputRef.current?.focus();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const allCommands = useMemo(() => {
+    const live = liveCommands.map((c) => ({
+      cmd: `/${c.name}`,
+      desc: c.description ?? '',
+      category: c.source,
+    }));
+    return [...BUILTIN_COMMANDS, ...live];
+  }, [liveCommands]);
+
+  const filtered = useMemo(() => {
+    if (!query) return allCommands;
+    const q = query.toLowerCase();
+    return allCommands.filter(
+      (c) => c.cmd.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q)
+    );
+  }, [allCommands, query]);
+
+  useEffect(() => { setSelectedIdx(0); }, [query]);
 
   const handleSelect = (cmd: string) => {
     closeOverlay();
@@ -44,6 +78,29 @@ export function CommandPalette() {
     else if (cmd === '/prompts') navigate('prompts');
     else if (cmd === '/inspect') navigate('inspect');
     else if (cmd === '/steer') navigate('steering');
+    else if (cmd === '/features') navigate('features');
+    else if (cmd === '/settings') navigate('settings');
+    else if (cmd === '/abort') { window.pi?.abort(); }
+    else if (cmd === '/compact') { rpc.compact(); }
+    else if (cmd === '/new') { rpc.newSession(); }
+    else {
+      // Send as prompt to pi
+      rpc.sendPrompt(cmd);
+    }
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIdx((i) => Math.min(i + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIdx((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      if (filtered[selectedIdx]) handleSelect(filtered[selectedIdx].cmd);
+    } else if (e.key === 'Escape') {
+      closeOverlay();
+    }
   };
 
   return (
@@ -60,18 +117,24 @@ export function CommandPalette() {
           border: `1px solid ${T.borderHi}`, boxShadow: `0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px ${T.piBg}`,
         }}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={onKeyDown}
       >
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
           borderBottom: `1px solid ${T.border}`,
         }}>
           <span style={{ fontFamily: F.mono, fontSize: 16, color: T.pi }}>/</span>
-          <span style={{ fontFamily: F.mono, fontSize: 13, color: T.text, flex: 1 }}>
-            <span style={{
-              display: 'inline-block', width: 7, height: 14, background: T.pi,
-              verticalAlign: 'text-bottom', animation: 'pi-blink 1s steps(2) infinite',
-            }} />
-          </span>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="type to filter commands…"
+            style={{
+              flex: 1, background: 'transparent', border: 'none', outline: 'none',
+              fontFamily: F.mono, fontSize: 13, color: T.text,
+            }}
+            autoFocus
+          />
           <Kbd>↑↓</Kbd>
           <span style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textMuted }}>navigate</span>
           <Kbd>↵</Kbd>
@@ -81,17 +144,21 @@ export function CommandPalette() {
         </div>
 
         <div style={{ maxHeight: 420, overflow: 'auto' }}>
-          {COMMANDS.map((item, i) => (
+          {filtered.length === 0 && (
+            <div style={{ padding: '16px', fontFamily: F.mono, fontSize: 12, color: T.textFaint }}>
+              No commands match "{query}"
+            </div>
+          )}
+          {filtered.map((item, i) => (
             <div
-              key={item.cmd}
+              key={`${item.cmd}-${i}`}
               onClick={() => handleSelect(item.cmd)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 12, padding: '9px 16px',
                 borderBottom: `1px solid ${T.borderDim}`, cursor: 'pointer',
-                background: i === 0 ? T.bgElev : 'transparent',
+                background: i === selectedIdx ? T.bgElev : 'transparent',
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = T.bgElev; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = i === 0 ? T.bgElev : 'transparent'; }}
+              onMouseEnter={() => setSelectedIdx(i)}
             >
               <span style={{ fontFamily: F.mono, fontSize: 12.5, color: T.pi, width: 120, flexShrink: 0 }}>{item.cmd}</span>
               <span style={{ fontFamily: F.sans, fontSize: 12.5, color: T.textDim, flex: 1 }}>{item.desc}</span>
@@ -107,7 +174,7 @@ export function CommandPalette() {
           display: 'flex', alignItems: 'center', gap: 10,
           fontFamily: F.mono, fontSize: 10, color: T.textFaint,
         }}>
-          <span>{COMMANDS.length} commands · type to filter</span>
+          <span>{filtered.length} commands</span>
           <div style={{ flex: 1 }} />
           <span>from packages, built-ins, and prompt templates</span>
         </div>

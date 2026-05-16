@@ -28,6 +28,13 @@ contextBridge.exposeInMainWorld('pi', {
     uninstall: (pkgId: string) => ipcRenderer.invoke('pi:pkgExec', 'uninstall', pkgId),
   },
 
+  session: {
+    list: () => ipcRenderer.invoke('session:list'),
+    read: (filePath: string) => ipcRenderer.invoke('session:read', filePath),
+    rename: (filePath: string, name: string) => ipcRenderer.invoke('session:rename', filePath, name),
+    delete: (filePath: string) => ipcRenderer.invoke('session:delete', filePath),
+  },
+
   app: {
     getVersion: () => ipcRenderer.invoke('app:version'),
     getCwd: () => ipcRenderer.invoke('app:cwd'),

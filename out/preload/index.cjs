@@ -20,6 +20,12 @@ electron.contextBridge.exposeInMainWorld("pi", {
 		install: (pkgId) => electron.ipcRenderer.invoke("pi:pkgExec", "install", pkgId),
 		uninstall: (pkgId) => electron.ipcRenderer.invoke("pi:pkgExec", "uninstall", pkgId)
 	},
+	session: {
+		list: () => electron.ipcRenderer.invoke("session:list"),
+		read: (filePath) => electron.ipcRenderer.invoke("session:read", filePath),
+		rename: (filePath, name) => electron.ipcRenderer.invoke("session:rename", filePath, name),
+		delete: (filePath) => electron.ipcRenderer.invoke("session:delete", filePath)
+	},
 	app: {
 		getVersion: () => electron.ipcRenderer.invoke("app:version"),
 		getCwd: () => electron.ipcRenderer.invoke("app:cwd"),

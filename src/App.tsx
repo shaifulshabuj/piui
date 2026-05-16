@@ -15,6 +15,8 @@ import { ThemeCustomizer } from './screens/ThemeCustomizer';
 import { ShareExport } from './screens/ShareExport';
 import { ToolInspector } from './screens/ToolInspector';
 import { Steering } from './screens/Steering';
+import { FeatureStatus } from './screens/FeatureStatus';
+import { Settings } from './screens/Settings';
 import { CommandPalette } from './screens/CommandPalette';
 import { PermissionPrompt } from './screens/PermissionPrompt';
 
@@ -29,10 +31,15 @@ function AppRouter() {
     const cleanupNav = window.pi?.onNavigate((s) => navigate(s as Screen));
     const cleanupOverlay = window.pi?.onOverlay((o) => openOverlay(o as Overlay));
 
+    // Auto-show permission overlay when pi requests permission
+    const onPermission = () => openOverlay('permission-prompt');
+    window.addEventListener('pi:permission-request', onPermission);
+
     return () => {
       cleanupEvents?.();
       cleanupNav?.();
       cleanupOverlay?.();
+      window.removeEventListener('pi:permission-request', onPermission);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -49,6 +56,8 @@ function AppRouter() {
     share: <ShareExport />,
     inspect: <ToolInspector />,
     steering: <Steering />,
+    features: <FeatureStatus />,
+    settings: <Settings />,
   };
 
   return (
@@ -67,4 +76,3 @@ export default function App() {
     </NavProvider>
   );
 }
-

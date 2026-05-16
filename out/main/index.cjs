@@ -242,6 +242,91 @@ function registerIpcHandlers() {
 	electron.ipcMain.handle("app:version", async () => electron.app.getVersion());
 	electron.ipcMain.handle("app:cwd", async () => process.cwd());
 	electron.ipcMain.handle("app:quit", async () => electron.app.quit());
+	const PI_SESSIONS_DIR = path.join(PI_HOME, "agent", "sessions");
+	electron.ipcMain.handle("session:list", async () => {
+		if (!isPathAllowed(PI_SESSIONS_DIR)) throw new Error("Access denied");
+		const results = [];
+		async function walk(dir) {
+			let entries;
+			try {
+				entries = await fs_promises.readdir(dir, { withFileTypes: true });
+			} catch {
+				return;
+			}
+			for (const e of entries) {
+				const full = path.join(dir, e.name);
+				if (e.isDirectory()) {
+					await walk(full);
+					continue;
+				}
+				if (!e.name.endsWith(".jsonl")) continue;
+				if (!isPathAllowed(full)) continue;
+				try {
+					const stat = await fs_promises.stat(full);
+					const handle = await fs_promises.open(full, "r");
+					const buf = Buffer.alloc(4096);
+					const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+					await handle.close();
+					const firstLine = buf.toString("utf8", 0, bytesRead).split("\n")[0];
+					let meta = {
+						id: path.basename(e.name, ".jsonl"),
+						filePath: full,
+						createdAt: stat.mtime.toISOString()
+					};
+					try {
+						const parsed = JSON.parse(firstLine);
+						if (parsed.type === "session") meta = {
+							id: parsed.id ?? meta.id,
+							filePath: full,
+							name: parsed.name,
+							cwd: parsed.cwd,
+							model: parsed.model,
+							createdAt: parsed.createdAt ?? meta.createdAt
+						};
+					} catch {}
+					results.push(meta);
+				} catch {}
+			}
+		}
+		await walk(PI_SESSIONS_DIR);
+		results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+		return results;
+	});
+	electron.ipcMain.handle("session:read", async (_, filePath) => {
+		if (!isPathAllowed(filePath)) throw new Error(`Access denied: ${filePath}`);
+		try {
+			return (await fs_promises.readFile(filePath, "utf8")).split("\n").filter((l) => l.trim()).flatMap((l) => {
+				try {
+					return [JSON.parse(l)];
+				} catch {
+					return [];
+				}
+			});
+		} catch {
+			return [];
+		}
+	});
+	electron.ipcMain.handle("session:rename", async (_, filePath, name) => {
+		if (!isPathAllowed(filePath)) throw new Error(`Access denied: ${filePath}`);
+		const lines = (await fs_promises.readFile(filePath, "utf8")).split("\n");
+		const idx = lines.findIndex((l) => {
+			try {
+				return JSON.parse(l).type === "session";
+			} catch {
+				return false;
+			}
+		});
+		if (idx >= 0) {
+			const entry = JSON.parse(lines[idx]);
+			entry.name = name;
+			lines[idx] = JSON.stringify(entry);
+			await fs_promises.writeFile(filePath, lines.join("\n"), "utf8");
+		}
+	});
+	electron.ipcMain.handle("session:delete", async (_, filePath) => {
+		if (!isPathAllowed(filePath)) throw new Error(`Access denied: ${filePath}`);
+		await fs_promises.unlink(filePath);
+	});
 }
 //#endregion
 //#region electron/menu.ts
