@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('pi', {
   pkg: {
     install: (pkgId: string) => ipcRenderer.invoke('pi:pkgExec', 'install', pkgId),
     uninstall: (pkgId: string) => ipcRenderer.invoke('pi:pkgExec', 'uninstall', pkgId),
+    update: (pkgId: string) => ipcRenderer.invoke('pi:pkgExec', 'update', pkgId),
   },
 
   session: {

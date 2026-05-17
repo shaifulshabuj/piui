@@ -5,16 +5,17 @@ interface NavState {
   screen: Screen;
   overlay: Overlay;
   inspectToolId: string | null;
+  params: Record<string, string>;
 }
 
 type NavAction =
-  | { type: 'NAVIGATE'; screen: Screen }
+  | { type: 'NAVIGATE'; screen: Screen; params?: Record<string, string> }
   | { type: 'OPEN_OVERLAY'; overlay: Overlay }
   | { type: 'CLOSE_OVERLAY' }
   | { type: 'INSPECT'; toolId: string };
 
 interface NavContextValue extends NavState {
-  navigate: (screen: Screen) => void;
+  navigate: (screen: Screen, params?: Record<string, string>) => void;
   openOverlay: (overlay: Overlay) => void;
   closeOverlay: () => void;
   inspect: (toolId: string) => void;
@@ -25,7 +26,7 @@ const NavContext = createContext<NavContextValue | null>(null);
 function navReducer(state: NavState, action: NavAction): NavState {
   switch (action.type) {
     case 'NAVIGATE':
-      return { ...state, screen: action.screen, overlay: null };
+      return { ...state, screen: action.screen, overlay: null, params: action.params ?? {} };
     case 'OPEN_OVERLAY':
       return { ...state, overlay: action.overlay };
     case 'CLOSE_OVERLAY':
@@ -42,9 +43,11 @@ export function NavProvider({ children }: { children: React.ReactNode }) {
     screen: 'chat',
     overlay: null,
     inspectToolId: null,
+    params: {},
   });
 
-  const navigate = (screen: Screen) => dispatch({ type: 'NAVIGATE', screen });
+  const navigate = (screen: Screen, params?: Record<string, string>) =>
+    dispatch({ type: 'NAVIGATE', screen, params });
   const openOverlay = (overlay: Overlay) => dispatch({ type: 'OPEN_OVERLAY', overlay });
   const closeOverlay = () => dispatch({ type: 'CLOSE_OVERLAY' });
   const inspect = (toolId: string) => dispatch({ type: 'INSPECT', toolId });

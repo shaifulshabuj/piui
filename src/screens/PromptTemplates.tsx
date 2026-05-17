@@ -26,6 +26,30 @@ function TemplateRow({ name, description, slash, active, onClick }: {
   );
 }
 
+function SkillRow({ name, description, location, path: skillPath, active, onClick }: {
+  name: string; description: string; location?: string; path?: string; active?: boolean; onClick?: () => void;
+}) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        padding: '10px 14px', borderRadius: 5, cursor: 'pointer',
+        background: active ? T.bgElev : 'transparent',
+        borderLeft: `2px solid ${active ? T.info : 'transparent'}`,
+        marginLeft: -2, paddingLeft: 12,
+      }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontFamily: F.mono, fontSize: 12.5, color: active ? T.info : T.text, fontWeight: active ? 600 : 400 }}>{name}</span>
+        {location && <Pill color={T.textFaint} bg="transparent" border={T.border}>{location}</Pill>}
+      </div>
+      <div style={{ fontFamily: F.sans, fontSize: 11.5, color: T.textDim, marginTop: 2 }}>{description}</div>
+      {skillPath && (
+        <div style={{ fontFamily: F.mono, fontSize: 10, color: T.textFaint, marginTop: 3 }}>{skillPath}</div>
+      )}
+    </div>
+  );
+}
+
 const BUILTIN_TEMPLATES = [
   { name: 'commit', slash: '/commit', description: 'Conventional commit from staged diff', source: 'builtin' as const },
   { name: 'pr', slash: '/pr', description: 'GitHub pull request description', source: 'builtin' as const },
@@ -38,16 +62,24 @@ const BUILTIN_TEMPLATES = [
 ];
 
 export function PromptTemplates() {
-  const { commands, load } = useCommandsStore();
+  const { commands, isLoaded } = useCommandsStore();
+  const [activeTab, setActiveTab] = useState<'prompts' | 'skills'>('prompts');
   const [selected, setSelected] = useState(0);
   const [query, setQuery] = useState('');
 
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    rpc.getCommands();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const liveTemplates = useMemo(() =>
     commands
       .filter((c) => c.source === 'prompt')
       .map((c) => ({ name: c.name, slash: `/${c.name}`, description: c.description ?? '', source: 'custom' as const })),
+    [commands]
+  );
+
+  const skills = useMemo(() =>
+    commands.filter((c) => c.source === 'skill'),
     [commands]
   );
 
@@ -58,11 +90,19 @@ export function PromptTemplates() {
     return all.filter((t) => t.name.includes(q) || t.description.toLowerCase().includes(q));
   }, [liveTemplates, query]);
 
-  const current = allTemplates[selected];
+  const filteredSkills = useMemo(() => {
+    if (!query) return skills;
+    const q = query.toLowerCase();
+    return skills.filter((s) => s.name.includes(q) || (s.description ?? '').toLowerCase().includes(q));
+  }, [skills, query]);
+
+  const current = activeTab === 'prompts' ? allTemplates[selected] : null;
 
   const useTemplate = () => {
     if (current) rpc.sendPrompt(current.slash);
   };
+
+  const showLoading = window.pi && !isLoaded && commands.length === 0;
 
   return (
     <PiWindow title="pi · /prompts">
@@ -72,6 +112,25 @@ export function PromptTemplates() {
           <span style={{ fontFamily: F.mono, fontSize: 11, color: T.pi }}>/prompts</span>
           <span style={{ fontFamily: F.sans, fontSize: 15, fontWeight: 500, color: T.text }}>Prompt Templates</span>
           <div style={{ flex: 1 }} />
+          {/* Tab switcher */}
+          {(['prompts', 'skills'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => { setActiveTab(tab); setSelected(0); }}
+              style={{
+                padding: '5px 12px', borderRadius: 5, cursor: 'pointer',
+                fontFamily: F.mono, fontSize: 11.5,
+                background: activeTab === tab ? T.bgElev : 'transparent',
+                border: `1px solid ${activeTab === tab ? T.border : 'transparent'}`,
+                color: activeTab === tab ? T.text : T.textDim,
+              }}
+            >
+              {tab}
+              {tab === 'skills' && skills.length > 0 && (
+                <span style={{ marginLeft: 5, color: T.textFaint, fontSize: 10 }}>{skills.length}</span>
+              )}
+            </button>
+          ))}
           <Btn variant="secondary" icon="+">New Template</Btn>
           <Btn variant="ghost" icon="↗">Import</Btn>
         </div>
@@ -90,40 +149,68 @@ export function PromptTemplates() {
               <input
                 value={query}
                 onChange={(e) => { setQuery(e.target.value); setSelected(0); }}
-                placeholder="search templates…"
+                placeholder={activeTab === 'prompts' ? 'search templates…' : 'search skills…'}
                 style={{ background: 'transparent', border: 'none', outline: 'none', fontFamily: F.mono, fontSize: 11, color: T.text, flex: 1 }}
               />
             </div>
-            <SectionLabel>built-in</SectionLabel>
-            {allTemplates.filter((t) => t.source === 'builtin').map((t) => (
-              <TemplateRow
-                key={t.name}
-                name={t.name} slash={t.slash} description={t.description}
-                active={allTemplates.indexOf(t) === selected}
-                onClick={() => setSelected(allTemplates.indexOf(t))}
-              />
-            ))}
-            {liveTemplates.length > 0 && (
+
+            {showLoading && (
+              <div style={{ fontFamily: F.mono, fontSize: 11, color: T.textFaint, padding: '8px 10px' }}>Waiting for pi…</div>
+            )}
+
+            {activeTab === 'prompts' && (
               <>
-                <div style={{ height: 8 }} />
-                <SectionLabel>custom</SectionLabel>
-                {allTemplates.filter((t) => t.source === 'custom').map((t) => (
+                <SectionLabel>built-in</SectionLabel>
+                {allTemplates.filter((t) => t.source === 'builtin').map((t) => (
                   <TemplateRow
                     key={t.name}
-                    name={t.name} description={t.description}
+                    name={t.name} slash={t.slash} description={t.description}
                     active={allTemplates.indexOf(t) === selected}
                     onClick={() => setSelected(allTemplates.indexOf(t))}
                   />
                 ))}
+                {liveTemplates.length > 0 && (
+                  <>
+                    <div style={{ height: 8 }} />
+                    <SectionLabel>custom</SectionLabel>
+                    {allTemplates.filter((t) => t.source === 'custom').map((t) => (
+                      <TemplateRow
+                        key={t.name}
+                        name={t.name} slash={t.slash} description={t.description}
+                        active={allTemplates.indexOf(t) === selected}
+                        onClick={() => setSelected(allTemplates.indexOf(t))}
+                      />
+                    ))}
+                  </>
+                )}
+                <div style={{ marginTop: 10 }}>
+                  <Btn variant="ghost" icon="+">New Template</Btn>
+                </div>
               </>
             )}
-            <div style={{ marginTop: 10 }}>
-              <Btn variant="ghost" icon="+">New Template</Btn>
-            </div>
+
+            {activeTab === 'skills' && (
+              <>
+                {filteredSkills.length === 0 && !showLoading && (
+                  <div style={{ fontFamily: F.mono, fontSize: 11, color: T.textFaint, padding: '8px 10px' }}>
+                    {window.pi ? 'No skills loaded.' : 'Connect pi to see loaded skills.'}
+                  </div>
+                )}
+                {filteredSkills.map((s) => (
+                  <SkillRow
+                    key={s.name}
+                    name={s.name}
+                    description={s.description ?? ''}
+                    location={s.location}
+                    path={s.path}
+                  />
+                ))}
+              </>
+            )}
           </div>
 
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, background: T.bg }}>
-            {current ? (
+            {activeTab === 'prompts' && current ? (
               <>
                 <div style={{ padding: '12px 18px', borderBottom: `1px solid ${T.border}`, background: T.bgPanel, display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontFamily: F.sans, fontSize: 15, fontWeight: 500, color: T.text }}>{current.name}</span>
@@ -142,6 +229,10 @@ export function PromptTemplates() {
                   </div>
                 </div>
               </>
+            ) : activeTab === 'skills' ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F.sans, fontSize: 13, color: T.textFaint }}>
+                {filteredSkills.length === 0 ? 'No skills loaded from pi.' : 'Select a skill to view details.'}
+              </div>
             ) : (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: F.sans, fontSize: 13, color: T.textFaint }}>
                 No templates match your search.

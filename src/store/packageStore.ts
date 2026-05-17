@@ -30,6 +30,7 @@ interface PackageState {
   loadPackages: () => Promise<void>
   install: (id: string) => Promise<void>
   uninstall: (id: string) => Promise<void>
+  update: (id: string) => Promise<void>
 }
 
 export const usePackageStore = create<PackageState>((set) => ({
@@ -39,13 +40,13 @@ export const usePackageStore = create<PackageState>((set) => ({
   async loadPackages() {
     if (!window.pi?.fs) return
     try {
-      const entries = await window.pi.fs.listDir('packages')
+      const entries = await window.pi.fs.listDir('agent/packages')
       if (!entries.length) return
-      const installedIds = new Set(entries.map((e) => e.name))
+      const installedNames = new Set(entries.filter((e) => e.isDir).map((e) => e.name))
       set((s) => ({
         packages: s.packages.map((p) => ({
           ...p,
-          installed: installedIds.has(p.name) || p.installed,
+          installed: installedNames.has(p.name) || p.installed,
         })),
       }))
     } catch {
@@ -80,6 +81,21 @@ export const usePackageStore = create<PackageState>((set) => ({
       set((s) => ({
         packages: s.packages.map((p) => p.id === id ? { ...p, installed: false } : p),
       }))
+    } finally {
+      set((s) => {
+        const next = new Set(s.installing)
+        next.delete(id)
+        return { installing: next }
+      })
+    }
+  },
+
+  async update(id: string) {
+    set((s) => ({ installing: new Set([...s.installing, id]) }))
+    try {
+      if (window.pi?.pkg) {
+        await window.pi.pkg.update(id)
+      }
     } finally {
       set((s) => {
         const next = new Set(s.installing)

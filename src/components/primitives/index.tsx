@@ -123,12 +123,14 @@ interface NavItemProps {
   active?: boolean;
   dim?: boolean;
   onClick?: () => void;
+  onDoubleClick?: () => void;
 }
 
-export function NavItem({ icon, label, hint, active, dim, onClick }: NavItemProps) {
+export function NavItem({ icon, label, hint, active, dim, onClick, onDoubleClick }: NavItemProps) {
   return (
     <div
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       style={{
         display: 'flex', alignItems: 'center', gap: 9,
         padding: '6px 10px', borderRadius: 5, marginBottom: 1,

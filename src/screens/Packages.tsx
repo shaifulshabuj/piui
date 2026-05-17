@@ -5,8 +5,8 @@ import { PiWindow, SidebarMain } from '../components/shell';
 import { useNav } from '../context/NavContext';
 import { usePackageStore, type Package } from '../store/packageStore';
 
-function PackageCard({ pkg, onInstall, onUninstall, busy }: {
-  pkg: Package; onInstall: () => void; onUninstall: () => void; busy: boolean;
+function PackageCard({ pkg, onInstall, onUninstall, onUpdate, busy }: {
+  pkg: Package; onInstall: () => void; onUninstall: () => void; onUpdate: () => void; busy: boolean;
 }) {
   const kindColor: Record<string, string> = {
     extension: T.tool, skill: T.info, prompt: T.warn, theme: T.pi, bundle: T.ok,
@@ -44,6 +44,9 @@ function PackageCard({ pkg, onInstall, onUninstall, busy }: {
             <Pill color={T.ok} bg={T.okBg} border="rgba(143,184,106,0.3)">
               <Dot color={T.ok} size={5} /> installed
             </Pill>
+            <Btn variant="ghost" onClick={onUpdate} disabled={busy}>
+              {busy ? '…' : 'update'}
+            </Btn>
             <Btn variant="ghost" onClick={onUninstall} disabled={busy}>
               {busy ? '…' : 'remove'}
             </Btn>
@@ -60,7 +63,7 @@ function PackageCard({ pkg, onInstall, onUninstall, busy }: {
 
 export function Packages() {
   const { navigate } = useNav();
-  const { packages, installing, loadPackages, install, uninstall } = usePackageStore();
+  const { packages, installing, loadPackages, install, uninstall, update } = usePackageStore();
 
   useEffect(() => { loadPackages() }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -117,7 +120,8 @@ export function Packages() {
                   <PackageCard key={p.id} pkg={p}
                     busy={installing.has(p.id)}
                     onInstall={() => install(p.id)}
-                    onUninstall={() => uninstall(p.id)} />
+                    onUninstall={() => uninstall(p.id)}
+                    onUpdate={() => update(p.id)} />
                 ))}
               </div>
             </>
@@ -131,7 +135,8 @@ export function Packages() {
                   <PackageCard key={p.id} pkg={p}
                     busy={installing.has(p.id)}
                     onInstall={() => install(p.id)}
-                    onUninstall={() => uninstall(p.id)} />
+                    onUninstall={() => uninstall(p.id)}
+                    onUpdate={() => update(p.id)} />
                 ))}
               </div>
             </>

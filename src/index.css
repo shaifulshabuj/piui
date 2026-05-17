@@ -51,3 +51,8 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(240, 164, 90, 0.3);
 }
+
+/* Session item: show delete button on hover */
+div:hover > .session-delete-btn {
+  opacity: 1 !important;
+}

@@ -73,10 +73,12 @@ export function registerIpcHandlers() {
   })
 
   // pi package management — spawn `pi install <pkg>` or `pi uninstall <pkg>`
-  ipcMain.handle('pi:pkgExec', async (_, subCmd: 'install' | 'uninstall', pkgId: string) => {
+  ipcMain.handle('pi:pkgExec', async (_, subCmd: 'install' | 'uninstall' | 'update', pkgId: string) => {
     if (!pkgId.match(/^[a-zA-Z0-9@/._:-]{1,200}$/)) throw new Error('Invalid package id')
+    // 'update' reinstalls via 'pi install' which fetches the latest version
+    const piCmd = subCmd === 'update' ? 'install' : subCmd
     return new Promise<string>((resolve, reject) => {
-      const proc = spawn(piManager.getBinaryPath() ?? 'pi', [subCmd, pkgId], {
+      const proc = spawn(piManager.getBinaryPath() ?? 'pi', [piCmd, pkgId], {
         stdio: ['ignore', 'pipe', 'pipe'],
         env: { ...process.env },
       })

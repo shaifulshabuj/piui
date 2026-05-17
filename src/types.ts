@@ -66,6 +66,7 @@ export interface ToolCallData {
 
 export interface Session {
   id: string;
+  filePath?: string;
   title: string;
   active?: boolean;
   dim?: boolean;

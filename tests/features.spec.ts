@@ -321,17 +321,14 @@ test.describe('ShareExport', () => {
     await expectScreen(page, 'Share & Export');
   });
 
-  test('gist URL is displayed', async ({ page }) => {
-    await expect(page.locator('text=gist.github.com').first()).toBeVisible();
+  test('gist URL is not hardcoded — share button triggers /share prompt', async ({ page }) => {
+    await expect(page.locator('text=No shared link yet').first()).toBeVisible();
+    await expect(page.locator('button', { hasText: /Share as GitHub Gist/ }).first()).toBeVisible();
   });
 
-  test('Copy button clicks without error', async ({ page }) => {
-    // Grant clipboard permission
-    await page.context().grantPermissions(['clipboard-write', 'clipboard-read']);
-    const copyBtn = page.locator('button', { hasText: 'Copy' });
-    await copyBtn.click();
-    // No crash
-    await expect(page.locator('text=Share & Export').first()).toBeVisible();
+  test('Copy button not visible before sharing', async ({ page }) => {
+    // Copy/Open only visible after sharedUrl is set by pi response
+    await expect(page.locator('button', { hasText: 'Copy' })).toHaveCount(0);
   });
 
   test('export format buttons are rendered', async ({ page }) => {

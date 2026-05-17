@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { T, F } from '../tokens';
 import { Pill, Btn, Dot } from '../components/primitives';
 import { PiWindow } from '../components/shell';
 import { useNav } from '../context/NavContext';
+import { rpc } from '../lib/rpcClient';
 
 function OnboardingTab({ label, active }: { label: string; active?: boolean }) {
   return (
@@ -42,33 +44,78 @@ function InstallBlock({ active, cmd }: { active: string; cmd: string }) {
   );
 }
 
-function ProviderRow({ name, models, status, hint }: { name: string; models: string; status: string; hint: string }) {
+function ProviderRow({ name, models, status, hint, authType, onOAuth, onKeySubmit }: {
+  name: string; models: string; status: string; hint: string;
+  authType: 'oauth' | 'key' | 'auto';
+  onOAuth?: () => void;
+  onKeySubmit?: (key: string) => void;
+}) {
+  const [editingKey, setEditingKey] = useState(false);
+  const [keyValue, setKeyValue] = useState('');
   const color = status === 'connected' ? T.ok : status === 'oauth' ? T.info : T.textMuted;
-  const label = status === 'connected' ? 'connected' : status === 'oauth' ? 'sign in' : 'add key';
+  const label = status === 'connected' ? 'connected' : authType === 'oauth' ? 'sign in' : authType === 'key' ? 'add key' : 'auto';
+
+  const handleClick = () => {
+    if (status === 'connected' || authType === 'auto') return;
+    if (authType === 'oauth') { onOAuth?.(); }
+    else { setEditingKey(true); }
+  };
+
+  const submitKey = () => {
+    if (!keyValue.trim()) return;
+    onKeySubmit?.(keyValue.trim());
+    setKeyValue('');
+    setEditingKey(false);
+  };
+
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 14,
       padding: '11px 14px', borderRadius: 6,
       border: `1px solid ${status === 'connected' ? T.borderHi : T.border}`,
       background: status === 'connected' ? T.bgPanel : 'transparent',
+      flexDirection: editingKey ? 'column' : 'row',
     }}>
-      <div style={{
-        width: 28, height: 28, borderRadius: 5,
-        background: T.bgElev, border: `1px solid ${T.border}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: F.mono, fontWeight: 600, color: T.text, fontSize: 13,
-      }}>{name[0]}</div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontFamily: F.mono, fontSize: 13, color: T.text }}>{name}</div>
-        <div style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textMuted, marginTop: 2 }}>
-          {models} models · {hint}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, width: '100%' }}>
+        <div style={{
+          width: 28, height: 28, borderRadius: 5,
+          background: T.bgElev, border: `1px solid ${T.border}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: F.mono, fontWeight: 600, color: T.text, fontSize: 13,
+        }}>{name[0]}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: F.mono, fontSize: 13, color: T.text }}>{name}</div>
+          <div style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textMuted, marginTop: 2 }}>
+            {models} models · {hint}
+          </div>
+        </div>
+        <div onClick={handleClick} style={{ cursor: status === 'connected' || authType === 'auto' ? 'default' : 'pointer' }}>
+          <Pill color={color} bg={status === 'connected' ? T.okBg : T.bgElev}
+            border={status === 'connected' ? 'rgba(143,184,106,0.3)' : T.border}>
+            {status === 'connected' && <Dot color={T.ok} size={5} />}
+            {label}
+          </Pill>
         </div>
       </div>
-      <Pill color={color} bg={status === 'connected' ? T.okBg : T.bgElev}
-        border={status === 'connected' ? 'rgba(143,184,106,0.3)' : T.border}>
-        {status === 'connected' && <Dot color={T.ok} size={5} />}
-        {label}
-      </Pill>
+      {editingKey && (
+        <div style={{ display: 'flex', gap: 8, width: '100%', paddingLeft: 42 }}>
+          <input
+            autoFocus
+            type="password"
+            value={keyValue}
+            onChange={(e) => setKeyValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') submitKey(); if (e.key === 'Escape') { setEditingKey(false); setKeyValue(''); } }}
+            placeholder={`${name.toLowerCase()} API key…`}
+            style={{
+              flex: 1, fontFamily: F.mono, fontSize: 11.5,
+              background: T.bgInput, border: `1px solid ${T.piBorder}`,
+              borderRadius: 4, padding: '5px 10px', color: T.text, outline: 'none',
+            }}
+          />
+          <Btn variant="primary" onClick={submitKey}>Connect</Btn>
+          <Btn variant="ghost" onClick={() => { setEditingKey(false); setKeyValue(''); }}>Cancel</Btn>
+        </div>
+      )}
     </div>
   );
 }
@@ -128,12 +175,16 @@ export function Onboarding() {
               <span style={{ color: T.pi }}># </span>connect at least one provider — you can add more anytime
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              <ProviderRow name="Anthropic" models="9" hint="OAuth via claude.ai or API key" status="connected" />
-              <ProviderRow name="OpenAI" models="14" hint="API key or OAuth" status="oauth" />
-              <ProviderRow name="Google" models="11" hint="Gemini · Vertex" status="oauth" />
-              <ProviderRow name="Groq" models="6" hint="API key · ultra-fast inference" status="key" />
-              <ProviderRow name="Ollama" models="local" hint="auto-discovered on localhost:11434" status="connected" />
-              <ProviderRow name="OpenRouter" models="200+" hint="aggregator · API key" status="key" />
+              <ProviderRow name="Anthropic" models="9" hint="OAuth via claude.ai or API key" status="connected" authType="oauth" />
+              <ProviderRow name="OpenAI" models="14" hint="API key or OAuth" status="oauth" authType="oauth"
+                onOAuth={() => rpc.sendPrompt('/login openai')} />
+              <ProviderRow name="Google" models="11" hint="Gemini · Vertex" status="oauth" authType="oauth"
+                onOAuth={() => rpc.sendPrompt('/login google')} />
+              <ProviderRow name="Groq" models="6" hint="API key · ultra-fast inference" status="key" authType="key"
+                onKeySubmit={(k) => rpc.sendPrompt(`/login groq --key ${k}`)} />
+              <ProviderRow name="Ollama" models="local" hint="auto-discovered on localhost:11434" status="connected" authType="auto" />
+              <ProviderRow name="OpenRouter" models="200+" hint="aggregator · API key" status="key" authType="key"
+                onKeySubmit={(k) => rpc.sendPrompt(`/login openrouter --key ${k}`)} />
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 4px 0', fontFamily: F.mono, fontSize: 11, color: T.textMuted }}>
                 <span style={{ color: T.textFaint }}>+ 11 more:</span>
                 <span>Azure · Bedrock · Mistral · Cerebras · xAI · Hugging Face · Kimi · MiniMax · …</span>

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { T, F } from '../../tokens';
 import { Pi, Dot, NavItem, SectionLabel, Btn } from '../primitives';
 import { useNav } from '../../context/NavContext';
@@ -107,9 +107,30 @@ export function PiWindow({ title, children, statusbar }: PiWindowProps) {
 
 export function SidebarMain() {
   const { screen, navigate, openOverlay } = useNav();
-  const { sessions, currentSessionId, loadSessions, setCurrentSession } = useSessionStore();
+  const { sessions, currentSessionId, loadSessions, setCurrentSession, renameSession, deleteSession } = useSessionStore();
+  const hasPi = !!window.pi;
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
 
   useEffect(() => { loadSessions() }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const startRename = (s: Session) => {
+    setEditingId(s.id);
+    setEditValue(s.title);
+  };
+
+  const commitRename = async (id: string) => {
+    if (editValue.trim()) await renameSession(id, editValue.trim());
+    setEditingId(null);
+  };
+
+  const cancelRename = () => { setEditingId(null); };
+
+  const handleDelete = async (s: Session) => {
+    if (window.confirm(`Delete "${s.title}"?`)) {
+      await deleteSession(s.id);
+    }
+  };
 
   const groups: { label: string; key: Session['group'] }[] = [
     { label: 'Today', key: 'today' },
@@ -138,14 +159,56 @@ export function SidebarMain() {
           <div key={key}>
             <SectionLabel>{label}</SectionLabel>
             {group.map((s) => (
-              <NavItem
+              <div
                 key={s.id}
-                icon={s.active ? '●' : '○'}
-                label={s.title}
-                active={s.id === currentSessionId && screen === 'chat'}
-                dim={s.dim}
-                onClick={() => { setCurrentSession(s.id); navigate('chat'); }}
-              />
+                style={{ position: 'relative', display: 'flex', alignItems: 'center' }}
+                title={hasPi ? 'Double-click to rename' : undefined}
+              >
+                {editingId === s.id ? (
+                  <input
+                    autoFocus
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onBlur={() => commitRename(s.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitRename(s.id);
+                      else if (e.key === 'Escape') cancelRename();
+                    }}
+                    style={{
+                      flex: 1, background: T.bgInput, border: `1px solid ${T.pi}`,
+                      borderRadius: 4, padding: '3px 7px', outline: 'none',
+                      fontFamily: F.mono, fontSize: 11.5, color: T.text, width: '100%',
+                    }}
+                  />
+                ) : (
+                  <NavItem
+                    icon={s.active ? '●' : '○'}
+                    label={s.title}
+                    active={s.id === currentSessionId && screen === 'chat'}
+                    dim={s.dim}
+                    onClick={() => {
+                      setCurrentSession(s.id, s.filePath);
+                      navigate('chat');
+                    }}
+                    onDoubleClick={hasPi ? () => startRename(s) : undefined}
+                  />
+                )}
+                {hasPi && editingId !== s.id && (
+                  <button
+                    onClick={() => handleDelete(s)}
+                    style={{
+                      position: 'absolute', right: 4,
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: T.textFaint, fontSize: 13, padding: '0 2px',
+                      opacity: 0, transition: 'opacity 0.1s',
+                      fontFamily: F.mono,
+                    }}
+                    className="session-delete-btn"
+                    title={`Delete "${s.title}"`}
+                    aria-label={`Delete ${s.title}`}
+                  >×</button>
+                )}
+              </div>
             ))}
           </div>
         );

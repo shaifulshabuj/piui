@@ -19,6 +19,13 @@ interface PiAPI {
   pkg: {
     install: (pkgId: string) => Promise<string>
     uninstall: (pkgId: string) => Promise<string>
+    update: (pkgId: string) => Promise<string>
+  }
+  session: {
+    list: () => Promise<Array<{ id: string; filePath: string; title: string; group: 'today' | 'yesterday' | 'last-week'; timestamp: number }>>
+    read: (filePath: string) => Promise<Array<{ type: string; role?: string; content?: unknown; parentId?: string; timestamp?: number; name?: string; label?: string }>>
+    rename: (filePath: string, name: string) => Promise<void>
+    delete: (filePath: string) => Promise<void>
   }
   app: {
     getVersion: () => Promise<string>

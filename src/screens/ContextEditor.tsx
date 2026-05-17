@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { T, F } from '../tokens';
 import { Pill, Btn, SectionLabel } from '../components/primitives';
 import { PiWindow, SidebarMain } from '../components/shell';
+import { rpc } from '../lib/rpcClient';
 
 type ContextFile = { path: string; kind: 'agents' | 'system' | 'project'; scope: 'user' | 'project' | 'pkg' };
 
@@ -129,6 +130,7 @@ export function ContextEditor() {
           <Pill>AGENTS.md · SYSTEM.md</Pill>
           <div style={{ flex: 1 }} />
           <span style={{ fontFamily: F.mono, fontSize: 11, color: T.textMuted }}>changes auto-reload on /reload or new session</span>
+          <Btn variant="ghost" icon="↺" onClick={() => rpc.sendPrompt('/reload')} title="Reload extensions, skills, and context">Reload</Btn>
           <Btn variant="ghost" icon="↗">pi.dev/context</Btn>
         </div>
 

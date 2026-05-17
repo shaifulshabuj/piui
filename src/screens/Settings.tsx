@@ -1,11 +1,36 @@
 import { T, F } from '../tokens';
-import { Btn } from '../components/primitives';
+import { Btn, Kbd } from '../components/primitives';
 import { PiWindow, SidebarMain } from '../components/shell';
 import { useModelStore } from '../store/modelStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { rpc } from '../lib/rpcClient';
 import { useNav } from '../context/NavContext';
 import type { ThinkingLevel } from '../types';
+
+const KEYBINDINGS = [
+  { keys: 'Ctrl+/', action: 'Command palette' },
+  { keys: 'Ctrl+L', action: 'Switch model' },
+  { keys: 'Ctrl+P', action: 'Cycle favorite models' },
+  { keys: 'Ctrl+C', action: 'Abort current run' },
+  { keys: 'Ctrl+Enter', action: 'Send message' },
+  { keys: 'Shift+Enter', action: 'New line in composer' },
+  { keys: 'Escape', action: 'Close overlay / cancel' },
+  { keys: 'Ctrl+S', action: 'Save context file' },
+  { keys: '↑↓', action: 'Navigate session tree' },
+] as const;
+
+function KeybindingsReference() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {KEYBINDINGS.map(({ keys, action }) => (
+        <div key={keys} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 0' }}>
+          <Kbd>{keys}</Kbd>
+          <span style={{ fontFamily: F.mono, fontSize: 11.5, color: T.textDim }}>{action}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 
@@ -158,6 +183,9 @@ export function Settings() {
               onClick={() => handleAutoCompaction(false)}
             />
           </div>
+
+          <SectionHeader title="Keyboard Shortcuts" />
+          <KeybindingsReference />
 
           <SectionHeader title="Session Directory" />
           <div style={{

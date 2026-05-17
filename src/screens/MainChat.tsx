@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { T, F } from '../tokens';
 import { Pill, Btn } from '../components/primitives';
 import { PiWindow, SidebarMain } from '../components/shell';
@@ -40,9 +41,68 @@ function EmptyState({ onSend }: { onSend: (msg: string) => void }) {
   );
 }
 
+function CompactModal({ open, instructions, onInstructionsChange, onConfirm, onCancel }: {
+  open: boolean;
+  instructions: string;
+  onInstructionsChange: (v: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000,
+        background: 'rgba(0,0,0,0.55)', display: 'flex',
+        alignItems: 'center', justifyContent: 'center',
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+    >
+      <div style={{
+        background: T.bgPanel, border: `1px solid ${T.border}`,
+        borderRadius: 8, padding: '20px 22px', width: 420,
+        display: 'flex', flexDirection: 'column', gap: 14,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+      }}>
+        <div style={{ fontFamily: F.sans, fontSize: 15, fontWeight: 500, color: T.text }}>
+          Compact session
+        </div>
+        <div style={{ fontFamily: F.sans, fontSize: 12.5, color: T.textDim }}>
+          Summarize older context to free up tokens. Optionally provide focus instructions.
+        </div>
+        <textarea
+          autoFocus
+          value={instructions}
+          onChange={(e) => onInstructionsChange(e.target.value)}
+          placeholder="Optional focus for compaction…"
+          onKeyDown={(e) => { if (e.key === 'Escape') onCancel(); }}
+          style={{
+            background: T.bgInput, border: `1px solid ${T.border}`,
+            borderRadius: 5, padding: '8px 10px', outline: 'none',
+            fontFamily: F.mono, fontSize: 12, color: T.text,
+            resize: 'vertical', minHeight: 80, width: '100%',
+          }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Btn variant="ghost" onClick={onCancel}>Cancel</Btn>
+          <Btn variant="primary" onClick={onConfirm}>Compact</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function MainChat() {
   const { navigate, openOverlay } = useNav();
   const { messages, toolCalls, isStreaming, isCompacting, isRetrying, retryAttempt, usage, sendPrompt } = useChatStore();
+  const [showCompactModal, setShowCompactModal] = useState(false);
+  const [compactInstructions, setCompactInstructions] = useState('');
+
+  const handleCompactConfirm = () => {
+    rpc.compact(compactInstructions.trim() || undefined);
+    setShowCompactModal(false);
+    setCompactInstructions('');
+  };
 
   return (
     <PiWindow title="pi · ~/code/pi-ui · main">
@@ -63,7 +123,8 @@ export function MainChat() {
           <Btn variant="ghost" icon="+" onClick={() => rpc.newSession()}>New</Btn>
           <Btn variant="ghost" icon="⎇" onClick={() => navigate('tree')}>Tree</Btn>
           <Btn variant="ghost" icon="↗" onClick={() => navigate('share')}>Share</Btn>
-          <Btn variant="ghost" icon="⊙" onClick={() => rpc.compact()} title="Compact session">Compact</Btn>
+          <Btn variant="ghost" icon="⊕" onClick={() => { rpc.clone(); navigate('chat'); }} title="Clone to new session">Clone</Btn>
+          <Btn variant="ghost" icon="⊙" onClick={() => setShowCompactModal(true)} title="Compact session">Compact</Btn>
           <Btn variant="ghost" icon="⋯" onClick={() => navigate('inspect')} />
         </div>
 
@@ -118,6 +179,14 @@ export function MainChat() {
           onCommandPalette={() => openOverlay('command-palette')}
           onSubmit={sendPrompt}
           usage={usage}
+        />
+
+        <CompactModal
+          open={showCompactModal}
+          instructions={compactInstructions}
+          onInstructionsChange={setCompactInstructions}
+          onConfirm={handleCompactConfirm}
+          onCancel={() => { setShowCompactModal(false); setCompactInstructions(''); }}
         />
       </div>
     </PiWindow>

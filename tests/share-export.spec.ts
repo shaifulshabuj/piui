@@ -17,8 +17,10 @@ test.describe('ShareExport', () => {
     await expect(page.locator('text=Share & Export').first()).toBeVisible();
   });
 
-  test('gist URL is displayed', async ({ page }) => {
-    await expect(page.locator('text=gist.github.com').first()).toBeVisible();
+  test('share button is present and no hardcoded gist URL on load', async ({ page }) => {
+    // Gist URL only appears after pi responds to /share — not hardcoded
+    await expect(page.locator('text=No shared link yet').first()).toBeVisible();
+    await expect(page.locator('button', { hasText: /Share as GitHub Gist/ }).first()).toBeVisible();
   });
 
   test('export html button is clickable', async ({ page }) => {
@@ -39,11 +41,9 @@ test.describe('ShareExport', () => {
     await expect(page.locator('text=json').first()).toBeVisible();
   });
 
-  test('copy gist url button does not crash', async ({ page }) => {
-    await page.context().grantPermissions(['clipboard-write', 'clipboard-read']);
-    const copyBtn = page.locator('button', { hasText: 'Copy' });
-    await copyBtn.click();
-    await expectScreen(page, 'Share & Export');
+  test('copy button is not visible before sharing', async ({ page }) => {
+    // Copy button only appears after a gist URL is returned from pi subprocess
+    await expect(page.locator('button', { hasText: 'Copy' })).toHaveCount(0);
   });
 
   test('session stats section is visible', async ({ page }) => {
