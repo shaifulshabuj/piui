@@ -23,6 +23,8 @@ test.afterAll(() => {
   if (!PROJECT) return;
   // Remove only runtime artifacts; leave committed fixture files intact
   rmrf(path.join(PROJECT, '.sessions'));
+  const generatedTxt = path.join(PROJECT, 'generated.txt');
+  fs.rmSync(generatedTxt, { force: true });
   const exports = fs.readdirSync(PROJECT).filter(f => f.endsWith('.html') || f.endsWith('.json.export'));
   for (const f of exports) fs.rmSync(path.join(PROJECT, f));
 });

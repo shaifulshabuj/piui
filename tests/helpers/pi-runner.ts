@@ -17,16 +17,16 @@ export interface PiRunResult {
   spawnError?: Error;
 }
 
-/** Resolves the absolute path to the `pi` executable (cached at module load time). */
-const PI_EXECUTABLE: string = (() => {
-  const fromPath = spawnSync('which', ['pi'], { encoding: 'utf8' }).stdout.trim();
-  if (!fromPath) throw new Error('pi CLI not found in PATH');
-  return fromPath;
-})();
+let _piExecutable: string | undefined;
 
-/** Resolves the absolute path to the `pi` executable */
+/** Resolves the absolute path to the `pi` executable (lazy-initialised on first call). */
 export function piExecutable(): string {
-  return PI_EXECUTABLE;
+  if (_piExecutable === undefined) {
+    const fromPath = spawnSync('which', ['pi'], { encoding: 'utf8' }).stdout.trim();
+    if (!fromPath) throw new Error('pi CLI not found in PATH');
+    _piExecutable = fromPath;
+  }
+  return _piExecutable;
 }
 
 /** Runs `pi [args]` synchronously inside `cwd`. */
@@ -52,6 +52,7 @@ export function runPi(options: PiRunOptions): PiRunResult {
 export function createTestProject(baseDir: string): string {
   const projectDir = path.join(baseDir, 'test-project');
   fs.mkdirSync(path.join(projectDir, 'src'), { recursive: true });
+  fs.rmSync(path.join(projectDir, '.sessions'), { recursive: true, force: true });
   fs.mkdirSync(path.join(projectDir, '.sessions'), { recursive: true });
 
   fs.writeFileSync(
