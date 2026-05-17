@@ -2,6 +2,8 @@ import { useChatStore } from '../store/chatStore'
 import { useModelStore } from '../store/modelStore'
 import { usePermissionStore } from '../store/permissionStore'
 import { useCommandsStore } from '../store/commandsStore'
+import { useSessionStore } from '../store/sessionStore'
+import { rpc } from './rpcClient'
 import type { PermissionRequest } from '../types'
 
 // Subscribes to pi:event IPC events and dispatches to Zustand stores.
@@ -74,6 +76,18 @@ export function setupEventHandler(): (() => void) | undefined {
         break
       case 'agent_end':
         chat.setStreaming(false)
+        rpc.getSessionStats()
+        break
+      case 'session_switched':
+        useSessionStore.getState().setCurrentSession(e.sessionId as string, e.sessionPath as string)
+        break
+      case 'session_named':
+        // Update title locally without an RPC round-trip
+        useSessionStore.setState((s) => ({
+          sessions: s.sessions.map((sess) =>
+            sess.id === (e.sessionId as string) ? { ...sess, title: e.name as string } : sess
+          ),
+        }))
         break
       case 'extension_error':
         chat.addError(e.error as string)

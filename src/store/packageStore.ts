@@ -46,7 +46,7 @@ export const usePackageStore = create<PackageState>((set) => ({
       set((s) => ({
         packages: s.packages.map((p) => ({
           ...p,
-          installed: installedNames.has(p.name) || p.installed,
+          installed: installedNames.has(p.name),
         })),
       }))
     } catch {

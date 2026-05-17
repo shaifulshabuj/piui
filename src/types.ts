@@ -42,7 +42,7 @@ export interface SessionEntry {
   content?: string;
   name?: string;
   label?: string;
-  timestamp?: string;
+  timestamp?: number | string;
   [key: string]: unknown;
 }
 

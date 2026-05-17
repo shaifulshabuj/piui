@@ -66,9 +66,12 @@ export function PromptTemplates() {
   const [activeTab, setActiveTab] = useState<'prompts' | 'skills'>('prompts');
   const [selected, setSelected] = useState(0);
   const [query, setQuery] = useState('');
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
 
   useEffect(() => {
     rpc.getCommands();
+    const timer = setTimeout(() => setLoadingTimedOut(true), 5000);
+    return () => clearTimeout(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const liveTemplates = useMemo(() =>
@@ -102,7 +105,7 @@ export function PromptTemplates() {
     if (current) rpc.sendPrompt(current.slash);
   };
 
-  const showLoading = window.pi && !isLoaded && commands.length === 0;
+  const showLoading = window.pi && !isLoaded && commands.length === 0 && !loadingTimedOut;
 
   return (
     <PiWindow title="pi · /prompts">
