@@ -28,6 +28,25 @@ function resolvePiPath(relOrAbs: string): string {
   return path.join(PI_HOME, relOrAbs)
 }
 
+/** Resolve the git repo root — more reliable than process.cwd() in production .app bundles */
+function getRepoRoot(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('git', ['rev-parse', '--show-toplevel'], {
+      cwd: process.cwd(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let out = ''
+    let err = ''
+    proc.stdout?.on('data', (d: Buffer) => { out += d.toString() })
+    proc.stderr?.on('data', (d: Buffer) => { err += d.toString() })
+    proc.on('close', (code) => {
+      if (code === 0) resolve(out.trim())
+      else reject(new Error(err.trim() || 'Not a git repository'))
+    })
+    proc.on('error', reject)
+  })
+}
+
 export function registerIpcHandlers() {
   // pi RPC
   ipcMain.handle('pi:send', async (_, cmd: object) => {
@@ -203,21 +222,7 @@ export function registerIpcHandlers() {
   ipcMain.handle('git:status', async (): Promise<GitStatusResult> => {
     // Resolve the authoritative repo root — process.cwd() may differ from the
     // git root in production .app bundles, so we ask git directly.
-    const repoRoot = await new Promise<string>((resolve, reject) => {
-      const proc = spawn('git', ['rev-parse', '--show-toplevel'], {
-        cwd: process.cwd(),
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-      let out = ''
-      let err = ''
-      proc.stdout?.on('data', (d: Buffer) => { out += d.toString() })
-      proc.stderr?.on('data', (d: Buffer) => { err += d.toString() })
-      proc.on('close', (code) => {
-        if (code === 0) resolve(out.trim())
-        else reject(new Error(err.trim() || 'Not a git repository'))
-      })
-      proc.on('error', reject)
-    })
+    const repoRoot = await getRepoRoot()
 
     const gitignorePath = path.join(repoRoot, '.gitignore')
 
@@ -245,7 +250,8 @@ export function registerIpcHandlers() {
 
   // ── git:readGitignore ────────────────────────────────────────────────────────
   ipcMain.handle('git:readGitignore', async (): Promise<string> => {
-    const gitignorePath = path.join(process.cwd(), '.gitignore')
+    const repoRoot = await getRepoRoot()
+    const gitignorePath = path.join(repoRoot, '.gitignore')
     try {
       return await fs.readFile(gitignorePath, 'utf8')
     } catch {
@@ -261,21 +267,7 @@ export function registerIpcHandlers() {
       .filter((p) => p.length > 0 && !p.includes('\0'))
     if (safePats.length === 0) return
 
-    const repoRoot = await new Promise<string>((resolve, reject) => {
-      const proc = spawn('git', ['rev-parse', '--show-toplevel'], {
-        cwd: process.cwd(),
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-      let out = ''
-      let err = ''
-      proc.stdout?.on('data', (d: Buffer) => { out += d.toString() })
-      proc.stderr?.on('data', (d: Buffer) => { err += d.toString() })
-      proc.on('close', (code) => {
-        if (code === 0) resolve(out.trim())
-        else reject(new Error(err.trim() || 'Not a git repository'))
-      })
-      proc.on('error', reject)
-    })
+    const repoRoot = await getRepoRoot()
     const gitignorePath = path.join(repoRoot, '.gitignore')
     const existing = await fs.readFile(gitignorePath, 'utf8').catch(() => '')
     const existingLines = new Set(existing.split('\n').map((l) => l.trim()))
