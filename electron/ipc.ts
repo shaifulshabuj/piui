@@ -201,12 +201,29 @@ export function registerIpcHandlers() {
 
   // ── git:status ──────────────────────────────────────────────────────────────
   ipcMain.handle('git:status', async (): Promise<GitStatusResult> => {
-    const cwd = process.cwd()
-    const gitignorePath = path.join(cwd, '.gitignore')
+    // Resolve the authoritative repo root — process.cwd() may differ from the
+    // git root in production .app bundles, so we ask git directly.
+    const repoRoot = await new Promise<string>((resolve, reject) => {
+      const proc = spawn('git', ['rev-parse', '--show-toplevel'], {
+        cwd: process.cwd(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      let out = ''
+      let err = ''
+      proc.stdout?.on('data', (d: Buffer) => { out += d.toString() })
+      proc.stderr?.on('data', (d: Buffer) => { err += d.toString() })
+      proc.on('close', (code) => {
+        if (code === 0) resolve(out.trim())
+        else reject(new Error(err.trim() || 'Not a git repository'))
+      })
+      proc.on('error', reject)
+    })
+
+    const gitignorePath = path.join(repoRoot, '.gitignore')
 
     const output = await new Promise<string>((resolve, reject) => {
       const proc = spawn('git', ['status', '--porcelain'], {
-        cwd,
+        cwd: repoRoot,
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       let out = ''
@@ -222,7 +239,7 @@ export function registerIpcHandlers() {
     const rawEntries = parseGitPorcelain(output)
     const entries = rawEntries.map(classifyEntry)
 
-    return { entries, cwd, gitignorePath }
+    return { entries, cwd: repoRoot, gitignorePath }
   })
 
   // ── git:readGitignore ────────────────────────────────────────────────────────
