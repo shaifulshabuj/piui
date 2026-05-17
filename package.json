@@ -9,7 +9,7 @@
     "dev:renderer": "vite --port 5616",
     "dev:web": "vite",
     "test": "playwright test",
-    "test:unit": "vitest run tests/gitClassifier.test.ts",
+    "test:unit": "vitest run tests/",
     "test:ui": "playwright test --ui",
     "build": "electron-vite build",
     "build:web": "tsc -b && vite build",

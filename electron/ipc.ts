@@ -228,10 +228,11 @@ export function registerIpcHandlers() {
       })
       let out = ''
       proc.stdout?.on('data', (d: Buffer) => { out += d.toString() })
-      proc.stderr?.on('data', (d: Buffer) => { out += d.toString() })
+      let err = ''
+      proc.stderr?.on('data', (d: Buffer) => { err += d.toString() })
       proc.on('close', (code) => {
         if (code === 0 || code === 1) resolve(out)
-        else reject(new Error(`git status exited ${code}: ${out}`))
+        else reject(new Error(`git status exited ${code}: ${err}`))
       })
       proc.on('error', reject)
     })
@@ -260,7 +261,22 @@ export function registerIpcHandlers() {
       .filter((p) => p.length > 0 && !p.includes('\0'))
     if (safePats.length === 0) return
 
-    const gitignorePath = path.join(process.cwd(), '.gitignore')
+    const repoRoot = await new Promise<string>((resolve, reject) => {
+      const proc = spawn('git', ['rev-parse', '--show-toplevel'], {
+        cwd: process.cwd(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      let out = ''
+      let err = ''
+      proc.stdout?.on('data', (d: Buffer) => { out += d.toString() })
+      proc.stderr?.on('data', (d: Buffer) => { err += d.toString() })
+      proc.on('close', (code) => {
+        if (code === 0) resolve(out.trim())
+        else reject(new Error(err.trim() || 'Not a git repository'))
+      })
+      proc.on('error', reject)
+    })
+    const gitignorePath = path.join(repoRoot, '.gitignore')
     const existing = await fs.readFile(gitignorePath, 'utf8').catch(() => '')
     const existingLines = new Set(existing.split('\n').map((l) => l.trim()))
     const toAdd = safePats.filter((p) => !existingLines.has(p))
