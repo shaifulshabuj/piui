@@ -139,7 +139,7 @@ export function registerIpcHandlers() {
           const buf = Buffer.alloc(4096)
           const { bytesRead } = await handle.read(buf, 0, buf.length, 0)
           await handle.close()
-          const firstLine = buf.toString('utf8', 0, bytesRead).split('\n')[0]
+          const firstLine = buf.toString('utf8', 0, bytesRead).split(/\r?\n/)[0]
           try {
             const parsed = JSON.parse(firstLine)
             if (parsed.type === 'session') {
@@ -167,7 +167,7 @@ export function registerIpcHandlers() {
     if (!path.resolve(filePath).startsWith(PI_SESSIONS_DIR + path.sep)) throw new Error(`Access denied: ${filePath}`)
     try {
       const content = await fs.readFile(filePath, 'utf8')
-      return content.split('\n')
+      return content.split(/\r?\n/)
         .filter((l) => l.trim())
         .flatMap((l) => { try { return [JSON.parse(l)] } catch { return [] } })
     } catch {
@@ -179,7 +179,7 @@ export function registerIpcHandlers() {
     if (!isPathAllowed(filePath)) throw new Error(`Access denied: ${filePath}`)
     if (!path.resolve(filePath).startsWith(PI_SESSIONS_DIR + path.sep)) throw new Error(`Access denied: ${filePath}`)
     const content = await fs.readFile(filePath, 'utf8')
-    const lines = content.split('\n')
+    const lines = content.split(/\r?\n/)
     const idx = lines.findIndex((l) => { try { return JSON.parse(l).type === 'session' } catch { return false } })
     if (idx >= 0) {
       const entry = JSON.parse(lines[idx])

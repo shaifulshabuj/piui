@@ -147,7 +147,15 @@ export function SessionTree() {
     setLoading(true);
     window.pi.session.read(session.filePath)
       .then((raw: object[]) => {
-        const parsed: SessionEntry[] = raw as SessionEntry[];
+        const parsed: SessionEntry[] = raw.flatMap((item) => {
+          try {
+            const e = item as Record<string, unknown>
+            if (typeof e['type'] !== 'string') return []
+            return [e as unknown as SessionEntry]
+          } catch {
+            return []
+          }
+        })
         setEntries(parsed);
       })
       .catch(() => setEntries([]))

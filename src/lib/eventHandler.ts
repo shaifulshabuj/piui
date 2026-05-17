@@ -98,10 +98,11 @@ export function setupEventHandler(): (() => void) | undefined {
       case 'session_named': {
         // Update title locally without an RPC round-trip.
         // Fall back to currentSessionId when the event omits sessionId.
-        const name = e.name as string | undefined
+        const name = typeof e.name === 'string' ? e.name : undefined
         if (!name) break
         const sessionId =
-          (e.sessionId as string | undefined) ?? useSessionStore.getState().currentSessionId
+          (typeof e.sessionId === 'string' ? e.sessionId : undefined)
+          ?? useSessionStore.getState().currentSessionId
         useSessionStore.setState((s) => ({
           sessions: s.sessions.map((sess) =>
             sess.id === sessionId ? { ...sess, title: name } : sess
