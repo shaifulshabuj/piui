@@ -52,3 +52,5 @@ waymark.config.json
 .devloop/agent-docs/provider-context.md
 .devloop/
 release/
+out/
+playwright-report/index.html

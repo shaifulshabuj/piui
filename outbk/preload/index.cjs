@@ -18,7 +18,8 @@ electron.contextBridge.exposeInMainWorld("pi", {
 	},
 	pkg: {
 		install: (pkgId) => electron.ipcRenderer.invoke("pi:pkgExec", "install", pkgId),
-		uninstall: (pkgId) => electron.ipcRenderer.invoke("pi:pkgExec", "uninstall", pkgId)
+		uninstall: (pkgId) => electron.ipcRenderer.invoke("pi:pkgExec", "uninstall", pkgId),
+		update: (pkgId) => electron.ipcRenderer.invoke("pi:pkgExec", "update", pkgId)
 	},
 	session: {
 		list: () => electron.ipcRenderer.invoke("session:list"),
