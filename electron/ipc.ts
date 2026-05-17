@@ -4,6 +4,8 @@ import * as path from 'path'
 import * as os from 'os'
 import { spawn } from 'child_process'
 import { piManager } from './piProcess'
+import { classifyEntry, parseGitPorcelain } from '../src/lib/gitClassifier'
+import type { GitStatusResult } from '../src/types'
 
 const PI_HOME = path.join(os.homedir(), '.pi')
 
@@ -195,5 +197,59 @@ export function registerIpcHandlers() {
     if (!isPathAllowed(filePath)) throw new Error(`Access denied: ${filePath}`)
     if (!path.resolve(filePath).startsWith(PI_SESSIONS_DIR + path.sep)) throw new Error(`Access denied: ${filePath}`)
     await fs.unlink(filePath)
+  })
+
+  // ── git:status ──────────────────────────────────────────────────────────────
+  ipcMain.handle('git:status', async (): Promise<GitStatusResult> => {
+    const cwd = process.cwd()
+    const gitignorePath = path.join(cwd, '.gitignore')
+
+    const output = await new Promise<string>((resolve, reject) => {
+      const proc = spawn('git', ['status', '--porcelain'], {
+        cwd,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      let out = ''
+      proc.stdout?.on('data', (d: Buffer) => { out += d.toString() })
+      proc.stderr?.on('data', (d: Buffer) => { out += d.toString() })
+      proc.on('close', (code) => {
+        if (code === 0 || code === 1) resolve(out)
+        else reject(new Error(`git status exited ${code}: ${out}`))
+      })
+      proc.on('error', reject)
+    })
+
+    const rawEntries = parseGitPorcelain(output)
+    const entries = rawEntries.map(classifyEntry)
+
+    return { entries, cwd, gitignorePath }
+  })
+
+  // ── git:readGitignore ────────────────────────────────────────────────────────
+  ipcMain.handle('git:readGitignore', async (): Promise<string> => {
+    const gitignorePath = path.join(process.cwd(), '.gitignore')
+    try {
+      return await fs.readFile(gitignorePath, 'utf8')
+    } catch {
+      return ''
+    }
+  })
+
+  // ── git:appendGitignore ──────────────────────────────────────────────────────
+  ipcMain.handle('git:appendGitignore', async (_, patterns: string[]): Promise<void> => {
+    if (!Array.isArray(patterns) || patterns.length === 0) return
+    const safePats = patterns
+      .map((p) => String(p).trim())
+      .filter((p) => p.length > 0 && !p.includes('\0'))
+    if (safePats.length === 0) return
+
+    const gitignorePath = path.join(process.cwd(), '.gitignore')
+    const existing = await fs.readFile(gitignorePath, 'utf8').catch(() => '')
+    const existingLines = new Set(existing.split('\n').map((l) => l.trim()))
+    const toAdd = safePats.filter((p) => !existingLines.has(p))
+    if (toAdd.length === 0) return
+
+    const append = '\n' + toAdd.join('\n') + '\n'
+    await fs.appendFile(gitignorePath, append, 'utf8')
   })
 }

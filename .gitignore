@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Build output
+out/
+
+# Test artifacts
+playwright-report/
+test-results/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -44,3 +51,4 @@ waymark.config.json
 .devloop/agent-docs/last-sync-report.md
 .devloop/agent-docs/provider-context.md
 .devloop/
+release/

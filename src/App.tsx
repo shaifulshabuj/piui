@@ -20,6 +20,7 @@ import { Settings } from './screens/Settings';
 import { Help } from './screens/Help';
 import { CommandPalette } from './screens/CommandPalette';
 import { PermissionPrompt } from './screens/PermissionPrompt';
+import { GitStatus } from './screens/GitStatus';
 
 function AppRouter() {
   const { screen, overlay, navigate, openOverlay } = useNav();
@@ -60,6 +61,7 @@ function AppRouter() {
     features: <FeatureStatus />,
     settings: <Settings />,
     help: <Help />,
+    'git-status': <GitStatus />,
   };
 
   return (

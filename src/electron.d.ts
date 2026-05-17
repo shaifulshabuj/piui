@@ -1,5 +1,7 @@
 // Type declarations for the window.pi API exposed by electron/preload.ts
 
+import type { GitStatusResult } from './types'
+
 interface PiAPI {
   isElectron: boolean
   send: (cmd: object) => Promise<void>
@@ -31,6 +33,11 @@ interface PiAPI {
     getVersion: () => Promise<string>
     getCwd: () => Promise<string>
     quit: () => Promise<void>
+  }
+  git: {
+    status: () => Promise<GitStatusResult>
+    readGitignore: () => Promise<string>
+    appendGitignore: (patterns: string[]) => Promise<void>
   }
   onNavigate: (cb: (screen: string) => void) => () => void
   onOverlay: (cb: (overlay: string) => void) => () => void

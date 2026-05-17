@@ -229,6 +229,8 @@ export function SidebarMain() {
           active={screen === 'help'} onClick={() => navigate('help')} />
         <NavItem icon="⚙" label="Settings"
           active={screen === 'settings'} onClick={() => navigate('settings')} />
+        <NavItem icon="⎇" label="Git Status"
+          active={screen === 'git-status'} onClick={() => navigate('git-status')} />
         <NavItem icon="◐" label="Command Palette"
           onClick={() => openOverlay('command-palette')} />
       </div>

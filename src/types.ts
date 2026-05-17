@@ -13,7 +13,39 @@ export type Screen =
   | 'steering'
   | 'features'
   | 'settings'
-  | 'help';
+  | 'help'
+  | 'git-status';
+
+export type GitClassification =
+  | 'build-artifact'
+  | 'test-report'
+  | 'dependency'
+  | 'source'
+  | 'config'
+  | 'log'
+  | 'unknown';
+
+export type GitChangeStatus =
+  | 'modified'
+  | 'added'
+  | 'deleted'
+  | 'renamed'
+  | 'untracked';
+
+export interface GitStatusEntry {
+  readonly path: string;
+  readonly status: GitChangeStatus;
+  readonly classification: GitClassification;
+  readonly reason: string;
+  readonly suggestIgnore: boolean;
+  readonly suggestedPattern: string;
+}
+
+export interface GitStatusResult {
+  readonly entries: readonly GitStatusEntry[];
+  readonly cwd: string;
+  readonly gitignorePath: string;
+}
 
 export type Overlay = 'command-palette' | 'permission-prompt' | null;
 

@@ -53,4 +53,11 @@ contextBridge.exposeInMainWorld('pi', {
     ipcRenderer.on('app:overlay', handler)
     return () => ipcRenderer.off('app:overlay', handler)
   },
+
+  git: {
+    status: () => ipcRenderer.invoke('git:status'),
+    readGitignore: () => ipcRenderer.invoke('git:readGitignore'),
+    appendGitignore: (patterns: string[]) =>
+      ipcRenderer.invoke('git:appendGitignore', patterns),
+  },
 })
