@@ -164,7 +164,7 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('session:read', async (_, filePath: string): Promise<object[]> => {
     if (!isPathAllowed(filePath)) throw new Error(`Access denied: ${filePath}`)
-    if (!filePath.startsWith(PI_SESSIONS_DIR + path.sep)) throw new Error(`Access denied: ${filePath}`)
+    if (!path.resolve(filePath).startsWith(PI_SESSIONS_DIR + path.sep)) throw new Error(`Access denied: ${filePath}`)
     try {
       const content = await fs.readFile(filePath, 'utf8')
       return content.split('\n')
@@ -177,6 +177,7 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('session:rename', async (_, filePath: string, name: string): Promise<void> => {
     if (!isPathAllowed(filePath)) throw new Error(`Access denied: ${filePath}`)
+    if (!path.resolve(filePath).startsWith(PI_SESSIONS_DIR + path.sep)) throw new Error(`Access denied: ${filePath}`)
     const content = await fs.readFile(filePath, 'utf8')
     const lines = content.split('\n')
     const idx = lines.findIndex((l) => { try { return JSON.parse(l).type === 'session' } catch { return false } })
@@ -192,6 +193,7 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('session:delete', async (_, filePath: string): Promise<void> => {
     if (!isPathAllowed(filePath)) throw new Error(`Access denied: ${filePath}`)
+    if (!path.resolve(filePath).startsWith(PI_SESSIONS_DIR + path.sep)) throw new Error(`Access denied: ${filePath}`)
     await fs.unlink(filePath)
   })
 }

@@ -81,7 +81,7 @@ export function setupEventHandler(): (() => void) | undefined {
       case 'session_switched': {
         // Update state directly — calling setCurrentSession would invoke rpc.switchSession,
         // causing pi to emit another session_switched event and loop indefinitely.
-        const sessionId = e.sessionId as string | undefined
+        const sessionId = typeof e.sessionId === 'string' ? e.sessionId : undefined
         if (!sessionId) break
         useSessionStore.setState((s) => ({
           currentSessionId: sessionId,
