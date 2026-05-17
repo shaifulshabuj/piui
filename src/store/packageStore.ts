@@ -41,7 +41,6 @@ export const usePackageStore = create<PackageState>((set) => ({
     if (!window.pi?.fs) return
     try {
       const entries = await window.pi.fs.listDir('agent/packages')
-      if (!entries.length) return
       const installedNames = new Set(entries.filter((e) => e.isDir).map((e) => e.name))
       set((s) => ({
         packages: s.packages.map((p) => ({

@@ -79,16 +79,31 @@ export function setupEventHandler(): (() => void) | undefined {
         rpc.getSessionStats()
         break
       case 'session_switched':
-        useSessionStore.getState().setCurrentSession(e.sessionId as string, e.sessionPath as string)
-        break
-      case 'session_named':
-        // Update title locally without an RPC round-trip
+        // Update state directly — calling setCurrentSession would invoke rpc.switchSession,
+        // causing pi to emit another session_switched event and loop indefinitely.
         useSessionStore.setState((s) => ({
+          currentSessionId: e.sessionId as string,
           sessions: s.sessions.map((sess) =>
-            sess.id === (e.sessionId as string) ? { ...sess, title: e.name as string } : sess
+            sess.id === (e.sessionId as string) && e.sessionPath
+              ? { ...sess, filePath: e.sessionPath as string }
+              : sess
           ),
         }))
         break
+      case 'session_named': {
+        // Update title locally without an RPC round-trip.
+        // Fall back to currentSessionId when the event omits sessionId.
+        const name = e.name as string | undefined
+        if (!name) break
+        const sessionId =
+          (e.sessionId as string | undefined) ?? useSessionStore.getState().currentSessionId
+        useSessionStore.setState((s) => ({
+          sessions: s.sessions.map((sess) =>
+            sess.id === sessionId ? { ...sess, title: name } : sess
+          ),
+        }))
+        break
+      }
       case 'extension_error':
         chat.addError(e.error as string)
         break
