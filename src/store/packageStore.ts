@@ -41,7 +41,23 @@ export const usePackageStore = create<PackageState>((set) => ({
     if (!window.pi?.fs) return
     try {
       const entries = await window.pi.fs.listDir('agent/packages')
-      const installedNames = new Set(entries.filter((e) => e.isDir).map((e) => e.name))
+      const dirs = entries.filter((e) => e.isDir)
+      const installedNames = new Set(dirs.map((e) => e.name))
+
+      // Scoped packages (e.g. @earendil/plan-mode) live under a parent @scope/ dir;
+      // recurse one level into any dir starting with "@" to collect "scope/name" keys.
+      const scopeDirs = dirs.filter((e) => e.name.startsWith('@'))
+      for (const scopeDir of scopeDirs) {
+        try {
+          const children = await window.pi.fs.listDir(`agent/packages/${scopeDir.name}`)
+          for (const child of children) {
+            if (child.isDir) installedNames.add(`${scopeDir.name}/${child.name}`)
+          }
+        } catch {
+          /* ignore errors listing individual scope dirs */
+        }
+      }
+
       set((s) => ({
         packages: s.packages.map((p) => ({
           ...p,

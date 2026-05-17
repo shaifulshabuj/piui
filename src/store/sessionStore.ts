@@ -84,6 +84,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await window.pi?.session?.delete(session.filePath)
     set((s) => ({
       sessions: s.sessions.filter((s2) => s2.id !== id),
+      currentSessionId: s.currentSessionId === id ? null : s.currentSessionId,
     }))
   },
 }))
