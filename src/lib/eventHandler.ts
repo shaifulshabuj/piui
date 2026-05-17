@@ -85,10 +85,12 @@ export function setupEventHandler(): (() => void) | undefined {
         if (!sessionId) break
         useSessionStore.setState((s) => ({
           currentSessionId: sessionId,
-          sessions: s.sessions.map((sess) =>
-            sess.id === sessionId && e.sessionPath
-              ? { ...sess, filePath: e.sessionPath as string }
+          sessions: s.sessions.map((sess) => {
+            const sessionPath = typeof e.sessionPath === 'string' ? e.sessionPath : undefined
+            return sess.id === sessionId && sessionPath
+              ? { ...sess, filePath: sessionPath }
               : sess
+          }
           ),
         }))
         break
