@@ -10,17 +10,10 @@ export function ShareExport() {
   const [sharedUrl, setSharedUrl] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [statsLoading, setStatsLoading] = useState(true);
-  const [statsError, setStatsError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    setStatsLoading(true);
-    setStatsError(false);
-    try {
-      rpc.getSessionStats();
-    } catch {
-      if (!cancelled) setStatsError(true);
-    }
+    rpc.getSessionStats();
     const timeout = setTimeout(() => {
       if (!cancelled) setStatsLoading(false);
     }, 5000);
@@ -28,10 +21,7 @@ export function ShareExport() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (sessionStats !== null) {
-      setStatsLoading(false);
-      setStatsError(false);
-    }
+    if (sessionStats !== null) setStatsLoading(false);
   }, [sessionStats]);
 
   // Extract gist URL from last assistant message
@@ -165,9 +155,7 @@ export function ShareExport() {
 
           <div style={{ width: 220, flexShrink: 0, borderLeft: `1px solid ${T.border}`, background: T.bgPanel, overflow: 'auto', padding: '16px 14px' }}>
             <div style={{ fontFamily: F.mono, fontSize: 10, color: T.textFaint, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>session info</div>
-            {statsError ? (
-              <div style={{ fontFamily: F.mono, fontSize: 10.5, color: T.warn }}>Failed to load stats</div>
-            ) : statsLoading ? (
+            {statsLoading ? (
               <div style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textMuted }}>Loading…</div>
             ) : (
               ([
