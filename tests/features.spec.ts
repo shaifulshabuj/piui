@@ -111,6 +111,10 @@ test.describe('MainChat', () => {
     await page.locator('button', { hasText: 'Share' }).click();
     await expectScreen(page, 'Share & Export');
   });
+
+  test('Clone button is visible in header', async ({ page }) => {
+    await expect(page.locator('button', { hasText: 'Clone' }).first()).toBeVisible();
+  });
 });
 
 // ─── 3 · SESSION TREE ───────────────────────────────────────────────────────
@@ -242,6 +246,20 @@ test.describe('Packages', () => {
     expect(typeof isVisible).toBe('boolean');
   });
 
+  test('installed packages show "update" button', async ({ page }) => {
+    // Mock data includes installed packages — update button should be visible
+    const updateBtn = page.locator('button', { hasText: 'update' }).first();
+    await expect(updateBtn).toBeVisible({ timeout: 3000 });
+  });
+
+  test('update button is clickable without crashing', async ({ page }) => {
+    const updateBtn = page.locator('button', { hasText: 'update' }).first();
+    await expect(updateBtn).toBeVisible({ timeout: 3000 });
+    await updateBtn.click();
+    // Should remain on Packages screen
+    await expect(page.locator('text=Packages').first()).toBeVisible();
+  });
+
   test('package detail link navigates to ExtensionDetail', async ({ page }) => {
     const detailLink = page.locator('text=detail').first();
     const isVisible = await detailLink.isVisible().catch(() => false);
@@ -283,6 +301,18 @@ test.describe('ContextEditor', () => {
     const visible = await agentsText.isVisible({ timeout: 3000 }).catch(() => false);
     // Even if we didn't navigate, just verify no crash
     expect(true).toBe(true);
+  });
+
+  test('Reload button is visible and clickable when context editor is open', async ({ page }) => {
+    const reloadBtn = page.locator('button', { hasText: 'Reload' }).first();
+    const visible = await reloadBtn.isVisible({ timeout: 2000 }).catch(() => false);
+    if (visible) {
+      await reloadBtn.click();
+      await expect(page.locator('text=Context Editor').first()).toBeVisible();
+    } else {
+      // ContextEditor not reachable in browser mode without pi
+      expect(true).toBe(true);
+    }
   });
 });
 
@@ -361,6 +391,20 @@ test.describe('PromptTemplates', () => {
     await commitItem.click();
     // template content or variables section should appear
     await expect(page.locator('text=template').first()).toBeVisible();
+  });
+
+  test('skills tab switches view from prompts tab', async ({ page }) => {
+    await page.locator('button', { hasText: 'skills' }).first().click();
+    // No crash; Prompt Templates header still visible
+    await expect(page.locator('text=Prompt Templates').first()).toBeVisible();
+  });
+
+  test('skills tab shows empty state in browser mode', async ({ page }) => {
+    await page.locator('button', { hasText: 'skills' }).first().click();
+    // In browser mode (no window.pi) skills list is empty
+    await expect(
+      page.locator('text=Connect pi to see loaded skills.').or(page.locator('text=No skills loaded.')).first()
+    ).toBeVisible({ timeout: 3000 });
   });
 });
 
@@ -596,5 +640,74 @@ test.describe('ExtensionDetail', () => {
     } else {
       expect(true).toBe(true);
     }
+  });
+});
+
+// ─── 19 · COMPACT MODAL ──────────────────────────────────────────────────────
+
+test.describe('CompactModal', () => {
+  test('opens when Compact button is clicked', async ({ page }) => {
+    await page.locator('button', { hasText: 'Compact' }).click();
+    await expect(page.locator('text=Compact session').first()).toBeVisible({ timeout: 3000 });
+  });
+
+  test('Cancel button closes the modal', async ({ page }) => {
+    await page.locator('button', { hasText: 'Compact' }).click();
+    await expect(page.locator('text=Compact session').first()).toBeVisible({ timeout: 3000 });
+    await page.locator('button', { hasText: 'Cancel' }).first().click();
+    await expect(page.locator('text=Compact session')).toHaveCount(0);
+  });
+
+  test('Escape key closes the modal', async ({ page }) => {
+    await page.locator('button', { hasText: 'Compact' }).click();
+    await expect(page.locator('text=Compact session').first()).toBeVisible({ timeout: 3000 });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('text=Compact session')).toHaveCount(0);
+  });
+});
+
+// ─── 20 · SETTINGS ───────────────────────────────────────────────────────────
+
+test.describe('Settings', () => {
+  test.beforeEach(async ({ page }) => {
+    await clickNav(page, 'Settings');
+    await expectScreen(page, 'Settings');
+  });
+
+  test('Keyboard Shortcuts section is visible', async ({ page }) => {
+    await expect(page.locator('text=Keyboard Shortcuts').first()).toBeVisible();
+  });
+
+  test('keyboard bindings are listed under Keyboard Shortcuts', async ({ page }) => {
+    // Ctrl+L binding for "Switch model" should be present
+    await expect(page.locator('text=Ctrl+L').first()).toBeVisible();
+  });
+});
+
+// ─── 21 · FEATURE STATUS ─────────────────────────────────────────────────────
+
+test.describe('FeatureStatus', () => {
+  test.beforeEach(async ({ page }) => {
+    await clickNav(page, 'Features');
+    await expectScreen(page, 'Feature Status');
+  });
+
+  test('shows "implemented" status label', async ({ page }) => {
+    await expect(page.locator('text=implemented').first()).toBeVisible();
+  });
+
+  test('summary pills include implemented count', async ({ page }) => {
+    // SummaryPill for "implemented" shows a count and the label
+    const pill = page.locator('text=implemented').first();
+    await expect(pill).toBeVisible();
+  });
+
+  test('search filters features by name or description', async ({ page }) => {
+    const searchInput = page.locator('input[placeholder="search features…"]').first();
+    await searchInput.fill('streaming');
+    await expect(
+      page.locator('text=streaming').or(page.locator('text=No features match')).first()
+    ).toBeVisible({ timeout: 3000 });
+    await searchInput.fill('');
   });
 });

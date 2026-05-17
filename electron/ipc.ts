@@ -183,8 +183,10 @@ export function registerIpcHandlers() {
       const entry = JSON.parse(lines[idx])
       entry.name = name
       lines[idx] = JSON.stringify(entry)
-      await fs.writeFile(filePath, lines.join('\n'), 'utf8')
+    } else {
+      lines.unshift(JSON.stringify({ type: 'session', name }))
     }
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8')
   })
 
   ipcMain.handle('session:delete', async (_, filePath: string): Promise<void> => {

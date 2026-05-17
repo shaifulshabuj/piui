@@ -156,6 +156,7 @@ export function SessionTree() {
 
   const treeNodes = useMemo(() => {
     if (entries.length > 0) return entriesToTree(entries);
+    if (window.pi) return [];
     return MOCK_TREE_NODES;
   }, [entries]);
 
@@ -244,13 +245,16 @@ export function SessionTree() {
           {loading && (
             <div style={{ fontFamily: F.mono, fontSize: 12, color: T.textFaint, padding: '20px 0' }}>Loading session…</div>
           )}
+          {!loading && treeNodes.length === 0 && !!window.pi && (
+            <div style={{ fontFamily: F.mono, fontSize: 12, color: T.textFaint, padding: '20px 0' }}>No session selected or session is empty.</div>
+          )}
           {!loading && filtered.length === 0 && entries.length === 0 && !window.pi && (
             <div style={{ fontFamily: F.mono, fontSize: 12, color: T.textFaint, padding: '20px 0' }}>No session loaded — running in browser mode.</div>
           )}
-          {!loading && filtered.length === 0 && isRealData && (
+          {!loading && filtered.length === 0 && isRealData && treeNodes.length > 0 && (
             <div style={{ fontFamily: F.mono, fontSize: 12, color: T.textFaint, padding: '20px 0' }}>No messages in this session.</div>
           )}
-          {!loading && filtered.length === 0 && !isRealData && (
+          {!loading && filtered.length === 0 && !isRealData && !window.pi && (
             <div style={{ fontFamily: F.mono, fontSize: 12, color: T.textFaint, padding: '20px 0' }}>No messages match your filter.</div>
           )}
           {!loading && filtered.map((n, i) => (
