@@ -19,7 +19,7 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
+  webServer: process.env.CLI_TESTS_ONLY === '1' ? undefined : {
     command: 'npm run dev:renderer',
     url: 'http://localhost:5616',
     reuseExistingServer: true,

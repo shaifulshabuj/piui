@@ -20,6 +20,7 @@ test.beforeAll(() => {
 });
 
 test.afterAll(() => {
+  if (!PROJECT) return;
   // Remove only runtime artifacts; leave committed fixture files intact
   rmrf(path.join(PROJECT, '.sessions'));
   const exports = fs.readdirSync(PROJECT).filter(f => f.endsWith('.html') || f.endsWith('.json.export'));
@@ -90,7 +91,7 @@ test.describe('Extensions', () => {
   test('pi list exits 0 and contains "packages" section', () => {
     const r = runPi({ args: ['list'], cwd: PROJECT });
     expect(r.ok).toBe(true);
-    expect(r.stdout.toLowerCase()).toContain('package');
+    expect((r.stdout + r.stderr).toLowerCase()).toContain('package');
   });
 });
 

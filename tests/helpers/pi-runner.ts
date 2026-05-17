@@ -14,13 +14,19 @@ export interface PiRunResult {
   stderr: string;
   exitCode: number | null;
   ok: boolean;
+  spawnError?: Error;
 }
 
-/** Resolves the absolute path to the `pi` executable */
-export function piExecutable(): string {
+/** Resolves the absolute path to the `pi` executable (cached at module load time). */
+const PI_EXECUTABLE: string = (() => {
   const fromPath = spawnSync('which', ['pi'], { encoding: 'utf8' }).stdout.trim();
   if (!fromPath) throw new Error('pi CLI not found in PATH');
   return fromPath;
+})();
+
+/** Resolves the absolute path to the `pi` executable */
+export function piExecutable(): string {
+  return PI_EXECUTABLE;
 }
 
 /** Runs `pi [args]` synchronously inside `cwd`. */
@@ -37,7 +43,8 @@ export function runPi(options: PiRunOptions): PiRunResult {
     stdout: (result.stdout as string) ?? '',
     stderr: (result.stderr as string) ?? '',
     exitCode: result.status,
-    ok: result.status === 0,
+    ok: result.status === 0 && !result.error,
+    spawnError: result.error,
   };
 }
 
