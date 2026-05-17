@@ -52,6 +52,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           .filter((e) => !e.isDir && e.name.endsWith('.jsonl'))
           .map((e, i) => ({
             id: e.name.replace('.jsonl', ''),
+            // filePath is unavailable in this degraded path — session:list is preferred.
+            // Without filePath, setCurrentSession will update currentSessionId but skip rpc.switchSession.
             title: e.name.replace('.jsonl', '').replace(/-/g, ' '),
             group: guessGroup(i),
           }))

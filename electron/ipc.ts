@@ -164,6 +164,7 @@ export function registerIpcHandlers() {
 
   ipcMain.handle('session:read', async (_, filePath: string): Promise<object[]> => {
     if (!isPathAllowed(filePath)) throw new Error(`Access denied: ${filePath}`)
+    if (!filePath.startsWith(PI_SESSIONS_DIR)) throw new Error(`Access denied: ${filePath}`)
     try {
       const content = await fs.readFile(filePath, 'utf8')
       return content.split('\n')

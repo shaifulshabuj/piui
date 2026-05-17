@@ -53,7 +53,7 @@ export const PI_FEATURES: PiFeature[] = [
   { id: 'custom-themes', category: 'Customization', name: 'Theme gallery', description: 'Browse and apply built-in and installed themes', status: 'partial', notes: 'Gallery shown; load installed themes from FS' },
   { id: 'custom-prompts', category: 'Customization', name: 'Prompt templates', description: 'List, create, and expand /template commands', status: 'implemented', notes: 'Loads live data from get_commands RPC; built-in + custom prompt tabs' },
   { id: 'custom-extensions', category: 'Customization', name: 'Extension detail', description: 'View extension README, tools, commands', status: 'partial', notes: 'Detail screen receives extId param; looks up from commandsStore; falls back to plan-mode hardcoded' },
-  { id: 'custom-skills', category: 'Customization', name: 'Skills', description: 'List loaded skills from get_commands (source=skill)', status: 'implemented', notes: 'Skills shown as tab in PromptTemplates screen; populated from get_commands RPC' },
+  { id: 'custom-skills', category: 'Customization', name: 'Skills', description: 'List loaded skills from get_commands (source=skill)', status: 'partial', notes: 'get_commands returns skills, shown in PromptTemplates tab; no dedicated detail view' },
   // Settings
   { id: 'settings-thinking', category: 'Settings', name: 'Thinking level', description: 'off / minimal / low / medium / high / xhigh', status: 'implemented' },
   { id: 'settings-steering-mode', category: 'Settings', name: 'Steering mode', description: 'all / one-at-a-time delivery', status: 'implemented' },
