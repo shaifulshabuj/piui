@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { T, F } from '../tokens';
 import { Pill, Btn, Dot, SectionLabel, Kbd } from '../components/primitives';
 import { PiWindow, SidebarMain } from '../components/shell';
+import { useChatStore } from '../store/chatStore';
+import { rpc } from '../lib/rpcClient';
 
 const TRANSCRIPT = [
   { turn: 'user', text: 'refactor the auth module to use JWT' },
@@ -12,12 +14,8 @@ const TRANSCRIPT = [
 ];
 
 export function Steering() {
+  const { pendingSteeringCount, pendingFollowUpCount } = useChatStore();
   const [steerText, setSteerText] = useState('');
-  const [queue, setQueue] = useState([
-    { id: 'q1', text: 'after the JWT migration, also update the session store to use redis' },
-    { id: 'q2', text: 'then add a /me endpoint that returns current user from token' },
-    { id: 'q3', text: 'unit tests for the token verification edge cases' },
-  ]);
   const [newQueueText, setNewQueueText] = useState('');
   const [addingToQueue, setAddingToQueue] = useState(false);
 
@@ -33,7 +31,6 @@ export function Steering() {
 
   const handleAddToQueue = () => {
     if (!newQueueText.trim()) return;
-    setQueue((q) => [...q, { id: `q-${Date.now()}`, text: newQueueText.trim() }]);
     window.pi?.send({ type: 'queue_add', message: newQueueText.trim() });
     setNewQueueText('');
     setAddingToQueue(false);
@@ -140,24 +137,29 @@ export function Steering() {
           <div style={{ width: 270, flexShrink: 0, borderLeft: `1px solid ${T.border}`, background: T.bgPanel, overflow: 'auto' }}>
             <div style={{ padding: '10px 14px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontFamily: F.mono, fontSize: 12, color: T.text }}>Queue</span>
-              <Pill color={T.pi} bg={T.piBg} border={T.piBorder}>{queue.length}</Pill>
+              <Pill color={T.pi} bg={T.piBg} border={T.piBorder}>{pendingSteeringCount + pendingFollowUpCount}</Pill>
               <div style={{ flex: 1 }} />
               <Btn variant="ghost" icon="+" onClick={() => setAddingToQueue(true)}>Add</Btn>
             </div>
 
             <div style={{ padding: '10px 12px' }}>
               <SectionLabel>pending after current task</SectionLabel>
-              {queue.map((item, i) => (
-                <div key={item.id} style={{
-                  display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px',
-                  borderRadius: 4, marginBottom: 4,
-                  background: T.bgElev, border: `1px solid ${T.border}`,
-                }}>
-                  <span style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textFaint, paddingTop: 2 }}>{i + 1}.</span>
-                  <span style={{ fontFamily: F.sans, fontSize: 12, color: T.text, flex: 1, lineHeight: 1.5 }}>{item.text}</span>
-                  <Btn variant="ghost" icon="✕" onClick={() => setQueue((q) => q.filter((x) => x.id !== item.id))} />
-                </div>
-              ))}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+                borderRadius: 4, marginBottom: 4,
+                background: T.bgElev, border: `1px solid ${T.border}`,
+              }}>
+                <span style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textFaint }}>steering</span>
+                <Pill color={T.pi} bg={T.piBg} border={T.piBorder}>{pendingSteeringCount}</Pill>
+              </div>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+                borderRadius: 4, marginBottom: 4,
+                background: T.bgElev, border: `1px solid ${T.border}`,
+              }}>
+                <span style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textFaint }}>follow-up</span>
+                <Pill color={T.pi} bg={T.piBg} border={T.piBorder}>{pendingFollowUpCount}</Pill>
+              </div>
               {addingToQueue ? (
                 <div style={{ marginTop: 10, display: 'flex', gap: 6 }}>
                   <input

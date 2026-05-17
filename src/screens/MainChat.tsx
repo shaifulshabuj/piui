@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { T, F } from '../tokens';
 import { Pill, Btn } from '../components/primitives';
 import { PiWindow, SidebarMain } from '../components/shell';
@@ -48,6 +48,13 @@ function CompactModal({ open, instructions, onInstructionsChange, onConfirm, onC
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onCancel]);
+
   if (!open) return null;
   return (
     <div
@@ -75,7 +82,6 @@ function CompactModal({ open, instructions, onInstructionsChange, onConfirm, onC
           value={instructions}
           onChange={(e) => onInstructionsChange(e.target.value)}
           placeholder="Optional focus for compaction…"
-          onKeyDown={(e) => { if (e.key === 'Escape') onCancel(); }}
           style={{
             background: T.bgInput, border: `1px solid ${T.border}`,
             borderRadius: 5, padding: '8px 10px', outline: 'none',

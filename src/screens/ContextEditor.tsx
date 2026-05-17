@@ -159,7 +159,7 @@ export function ContextEditor() {
                 {loading ? 'loading…' : saved ? 'saved' : 'unsaved'}
               </Pill>
               <div style={{ flex: 1 }} />
-              <Btn variant="ghost" icon="↺" onClick={() => saveFile(content)}>/reload</Btn>
+              <Btn variant="ghost" icon="↺" onClick={() => saveFile(content)}>save</Btn>
               <Btn variant="ghost" icon="↗">Open in editor</Btn>
             </div>
 
