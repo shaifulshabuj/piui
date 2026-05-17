@@ -131,6 +131,7 @@ export function NavItem({ icon, label, hint, active, dim, onClick, onDoubleClick
     <div
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      aria-current={active ? 'page' : undefined}
       style={{
         display: 'flex', alignItems: 'center', gap: 9,
         padding: '6px 10px', borderRadius: 5, marginBottom: 1,

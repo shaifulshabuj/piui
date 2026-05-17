@@ -13,4 +13,4 @@ export const KEYBINDINGS: readonly Keybinding[] = [
   { keys: 'Escape', action: 'Close overlay / cancel' },
   { keys: 'Ctrl+S', action: 'Save context file' },
   { keys: '↑↓', action: 'Navigate session tree' },
-] as const;
+];

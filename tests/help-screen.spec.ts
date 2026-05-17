@@ -69,8 +69,7 @@ test.describe('Help screen', () => {
     await navigateToHelp(page);
     // Verify we are on the help screen
     await expect(page.locator('[data-testid="help-screen"]')).toBeVisible();
-    // The Help nav item (div with text "Help") should be visible in the sidebar
-    const helpNavItem = page.locator('[data-testid="help-screen"]').locator('..').locator('..').locator('text=Help').first();
-    await expect(page.locator('text=Help').first()).toBeVisible();
+    // The Help nav item should have aria-current="page" when active
+    await expect(page.locator('[aria-current="page"]', { hasText: 'Help' })).toBeVisible();
   });
 });
