@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { T, F } from '../tokens';
 import { Pill, Btn } from '../components/primitives';
 import { PiWindow, SidebarMain } from '../components/shell';
@@ -104,11 +104,16 @@ export function MainChat() {
   const [showCompactModal, setShowCompactModal] = useState(false);
   const [compactInstructions, setCompactInstructions] = useState('');
 
-  const handleCompactConfirm = () => {
+  const handleCompactConfirm = useCallback(() => {
     rpc.compact(compactInstructions.trim() || undefined);
     setShowCompactModal(false);
     setCompactInstructions('');
-  };
+  }, [compactInstructions]);
+
+  const handleCompactCancel = useCallback(() => {
+    setShowCompactModal(false);
+    setCompactInstructions('');
+  }, []);
 
   return (
     <PiWindow title="pi · ~/code/pi-ui · main">
@@ -192,7 +197,7 @@ export function MainChat() {
           instructions={compactInstructions}
           onInstructionsChange={setCompactInstructions}
           onConfirm={handleCompactConfirm}
-          onCancel={() => { setShowCompactModal(false); setCompactInstructions(''); }}
+          onCancel={handleCompactCancel}
         />
       </div>
     </PiWindow>

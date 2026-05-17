@@ -9,10 +9,30 @@ export function ShareExport() {
   const { messages, toolCalls, usage, sessionStats, isStreaming } = useChatStore();
   const [sharedUrl, setSharedUrl] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState(false);
 
   useEffect(() => {
-    rpc.getSessionStats();
+    let cancelled = false;
+    setStatsLoading(true);
+    setStatsError(false);
+    try {
+      rpc.getSessionStats();
+    } catch {
+      if (!cancelled) setStatsError(true);
+    }
+    const timeout = setTimeout(() => {
+      if (!cancelled) setStatsLoading(false);
+    }, 5000);
+    return () => { cancelled = true; clearTimeout(timeout); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (sessionStats !== null) {
+      setStatsLoading(false);
+      setStatsError(false);
+    }
+  }, [sessionStats]);
 
   // Extract gist URL from last assistant message
   useEffect(() => {
@@ -145,17 +165,23 @@ export function ShareExport() {
 
           <div style={{ width: 220, flexShrink: 0, borderLeft: `1px solid ${T.border}`, background: T.bgPanel, overflow: 'auto', padding: '16px 14px' }}>
             <div style={{ fontFamily: F.mono, fontSize: 10, color: T.textFaint, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10 }}>session info</div>
-            {([
-              ['messages', String(stats.messages ?? messages.length)],
-              ['tool calls', String(stats.toolCalls ?? toolCalls.length)],
-              ['tokens used', stats.tokens ? `${(Number(stats.tokens) / 1000).toFixed(1)}k` : '—'],
-              ['cost', stats.cost ? `$${Number(stats.cost).toFixed(3)}` : '—'],
-            ] as const).map(([k, v]) => (
-              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 7 }}>
-                <span style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textMuted }}>{k}</span>
-                <span style={{ fontFamily: F.mono, fontSize: 10.5, color: T.text }}>{v}</span>
-              </div>
-            ))}
+            {statsError ? (
+              <div style={{ fontFamily: F.mono, fontSize: 10.5, color: T.warn }}>Failed to load stats</div>
+            ) : statsLoading ? (
+              <div style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textMuted }}>Loading…</div>
+            ) : (
+              ([
+                ['messages', String(stats.messages ?? messages.length)],
+                ['tool calls', String(stats.toolCalls ?? toolCalls.length)],
+                ['tokens used', stats.tokens ? `${(Number(stats.tokens) / 1000).toFixed(1)}k` : '—'],
+                ['cost', stats.cost ? `$${Number(stats.cost).toFixed(3)}` : '—'],
+              ] as const).map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 7 }}>
+                  <span style={{ fontFamily: F.mono, fontSize: 10.5, color: T.textMuted }}>{k}</span>
+                  <span style={{ fontFamily: F.mono, fontSize: 10.5, color: T.text }}>{v}</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
