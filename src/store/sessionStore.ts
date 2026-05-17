@@ -36,11 +36,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (!window.pi?.session) return
     try {
       const metas = await window.pi.session.list()
-      const sessions: Session[] = metas.map((m, i) => ({
+      const sessions: Session[] = metas.map((m) => ({
         id: m.id,
         filePath: m.filePath,
-        title: m.name ?? m.id.replace(/-/g, ' '),
-        group: guessGroup(i),
+        title: m.title,
+        group: m.group,
       }))
       if (sessions.length > 0) set({ sessions })
     } catch {

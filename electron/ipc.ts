@@ -104,10 +104,17 @@ export function registerIpcHandlers() {
   interface SessionMeta {
     id: string
     filePath: string
-    name?: string
-    cwd?: string
-    model?: string
-    createdAt: string
+    title: string
+    group: 'today' | 'yesterday' | 'last-week'
+    timestamp: number
+  }
+
+  function getGroup(ts: number): 'today' | 'yesterday' | 'last-week' {
+    const diff = Date.now() - ts
+    const day = 86_400_000
+    if (diff < day) return 'today'
+    if (diff < 2 * day) return 'yesterday'
+    return 'last-week'
   }
 
   ipcMain.handle('session:list', async (): Promise<SessionMeta[]> => {
@@ -123,36 +130,35 @@ export function registerIpcHandlers() {
         if (!isPathAllowed(full)) continue
         try {
           const stat = await fs.stat(full)
+          const timestamp = stat.mtime.getTime()
+          const rawId = path.basename(e.name, '.jsonl')
+          let id = rawId
+          let name: string | undefined
           // Read only the first line for metadata
           const handle = await fs.open(full, 'r')
           const buf = Buffer.alloc(4096)
           const { bytesRead } = await handle.read(buf, 0, buf.length, 0)
           await handle.close()
           const firstLine = buf.toString('utf8', 0, bytesRead).split('\n')[0]
-          let meta: SessionMeta = {
-            id: path.basename(e.name, '.jsonl'),
-            filePath: full,
-            createdAt: stat.mtime.toISOString(),
-          }
           try {
             const parsed = JSON.parse(firstLine)
             if (parsed.type === 'session') {
-              meta = {
-                id: parsed.id ?? meta.id,
-                filePath: full,
-                name: parsed.name,
-                cwd: parsed.cwd,
-                model: parsed.model,
-                createdAt: parsed.createdAt ?? meta.createdAt,
-              }
+              id = parsed.id ?? id
+              name = parsed.name
             }
-          } catch { /* use stat-based fallback */ }
-          results.push(meta)
+          } catch { /* use filename-based fallback */ }
+          results.push({
+            id,
+            filePath: full,
+            title: name ?? id.replace(/-/g, ' '),
+            group: getGroup(timestamp),
+            timestamp,
+          })
         } catch { /* skip unreadable files */ }
       }
     }
     await walk(PI_SESSIONS_DIR)
-    results.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    results.sort((a, b) => b.timestamp - a.timestamp)
     return results
   })
 

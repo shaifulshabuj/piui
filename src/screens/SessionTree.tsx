@@ -292,7 +292,7 @@ export function SessionTree() {
           )}
           <span>
             {currentSession?.filePath
-              ? <span style={{ color: T.info }}>{currentSession.filePath.replace(process.env.HOME ?? '', '~')}</span>
+              ? <span style={{ color: T.info }}>{currentSession.filePath.replace(/^\/Users\/[^/]+|^\/home\/[^/]+/, '~')}</span>
               : <span style={{ color: T.textFaint }}>no session file</span>
             }
           </span>
