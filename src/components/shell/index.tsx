@@ -225,6 +225,8 @@ export function SidebarMain() {
           active={screen === 'prompts'} onClick={() => navigate('prompts')} />
         <NavItem icon="◎" label="Features"
           active={screen === 'features'} onClick={() => navigate('features')} />
+        <NavItem icon="?" label="Help"
+          active={screen === 'help'} onClick={() => navigate('help')} />
         <NavItem icon="⚙" label="Settings"
           active={screen === 'settings'} onClick={() => navigate('settings')} />
         <NavItem icon="◐" label="Command Palette"

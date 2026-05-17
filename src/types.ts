@@ -12,7 +12,8 @@ export type Screen =
   | 'inspect'
   | 'steering'
   | 'features'
-  | 'settings';
+  | 'settings'
+  | 'help';
 
 export type Overlay = 'command-palette' | 'permission-prompt' | null;
 

@@ -6,18 +6,7 @@ import { useSettingsStore } from '../store/settingsStore';
 import { rpc } from '../lib/rpcClient';
 import { useNav } from '../context/NavContext';
 import type { ThinkingLevel } from '../types';
-
-const KEYBINDINGS = [
-  { keys: 'Ctrl+/', action: 'Command palette' },
-  { keys: 'Ctrl+L', action: 'Switch model' },
-  { keys: 'Ctrl+P', action: 'Cycle favorite models' },
-  { keys: 'Ctrl+C', action: 'Abort current run' },
-  { keys: 'Ctrl+Enter', action: 'Send message' },
-  { keys: 'Shift+Enter', action: 'New line in composer' },
-  { keys: 'Escape', action: 'Close overlay / cancel' },
-  { keys: 'Ctrl+S', action: 'Save context file' },
-  { keys: '↑↓', action: 'Navigate session tree' },
-] as const;
+import { KEYBINDINGS } from '../data/keybindings';
 
 function KeybindingsReference() {
   return (

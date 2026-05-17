@@ -17,6 +17,7 @@ import { ToolInspector } from './screens/ToolInspector';
 import { Steering } from './screens/Steering';
 import { FeatureStatus } from './screens/FeatureStatus';
 import { Settings } from './screens/Settings';
+import { Help } from './screens/Help';
 import { CommandPalette } from './screens/CommandPalette';
 import { PermissionPrompt } from './screens/PermissionPrompt';
 
@@ -58,6 +59,7 @@ function AppRouter() {
     steering: <Steering />,
     features: <FeatureStatus />,
     settings: <Settings />,
+    help: <Help />,
   };
 
   return (
