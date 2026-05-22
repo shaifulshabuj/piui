@@ -26,7 +26,7 @@ jobs:
       - name: Build app
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npm run build:app
+        run: npx electron-vite build && npx electron-builder --publish never
 
       - name: Upload DMGs to GitHub Release
         uses: softprops/action-gh-release@v2
