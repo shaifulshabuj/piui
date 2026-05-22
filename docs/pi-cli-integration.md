@@ -128,3 +128,21 @@ and `window.pi.onOverlay` (exposed through Electron's `contextBridge`).
 
 Use `abort()` to cancel a running task; use `stop()` to shut down pi permanently
 (e.g., app quit).
+
+---
+
+## Binary discovery
+
+`findPiBinary()` in `electron/piProcess.ts` uses a four-step ordered strategy
+to locate the `pi` executable when the app launches from Finder or Spotlight
+(where `PATH` may not include nvm-managed binaries):
+
+| Step | Method | Why |
+|------|--------|-----|
+| 1 | Static candidates (`/opt/homebrew/bin/pi`, `~/.local/bin/pi`, etc.) | Sub-millisecond, no shell spawn |
+| 2 | nvm filesystem scan (`~/.nvm/versions/node/*/bin/pi`) | Works without sourcing nvm.sh; covers all installed Node versions |
+| 3 | Source `nvm.sh` explicitly via `/bin/zsh` or `/bin/bash` | Handles nvm without a login shell or TTY (`-i` flag) |
+| 4 | Login-shell PATH via `zsh -l -c 'command -v pi'` | Last-resort for other version managers (Volta, fnm, etc.) |
+
+Step 3 single-quotes the `source` command to prevent word-splitting on paths with spaces.
+`findViaNvmShell` returns `null` early if `nvm.sh` path contains a single quote.

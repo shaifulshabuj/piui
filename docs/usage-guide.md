@@ -97,6 +97,7 @@ This generates a self-contained HTML file with the full session transcript.
 | `--print` | `-p` | Non-interactive (print-and-exit) mode |
 | `--no-session` | | Do not write a session file |
 | `--no-tools` | | Disable all tools |
+| `--model <name>` | | Select the model for this run |
 
 ### Tool selection
 

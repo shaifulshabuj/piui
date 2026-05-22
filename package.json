@@ -16,7 +16,10 @@
     "build:app": "electron-vite build && electron-builder",
     "lint": "eslint .",
     "preview": "electron-vite preview",
-    "start": "electron-vite build && electron ."
+    "start": "electron-vite build && electron .",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "dependencies": {
     "react": "^19.2.6",
@@ -63,6 +66,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.6",
+    "vitepress": "^1.6.0"
   }
 }
