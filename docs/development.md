@@ -87,7 +87,7 @@ piui/
 │   └── *.spec.ts         # Per-screen browser specs
 ├── docs/                 # VitePress documentation source
 │   ├── .vitepress/
-│   │   └── config.ts     # VitePress site configuration
+│   │   └── config.mts    # VitePress site configuration
 │   └── *.md              # Documentation pages
 ├── .docuflow/            # DocuFlow wiki and sources
 ├── .github/workflows/    # CI/CD GitHub Actions
@@ -170,4 +170,4 @@ piui/
 |----------|--------|
 | `CLI_TESTS_ONLY=1` | Skips the browser dev server in Playwright config; allows CLI-only test runs without a running renderer |
 
-> **Note:** The VitePress `base` URL is set to `/piui/` in `docs/.vitepress/config.ts`. If the GitHub repository is renamed or moved to an organisation, update `base` to match the new repository name (e.g., `/my-org/piui/` or `/new-name/`).
+> **Note:** The VitePress `base` URL is set to `/piui/` in `docs/.vitepress/config.mts`. If the GitHub repository is renamed or moved to an organisation, update `base` to match the new repository name (e.g., `/my-org/piui/` or `/new-name/`).

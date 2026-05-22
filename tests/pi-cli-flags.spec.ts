@@ -171,6 +171,30 @@ test.describe('CLI flags — output mode', () => {
   });
 });
 
+
+// ─── 4b · CLI flags — RPC mode smoke test ───────────────────────────────────
+
+test.describe('CLI flags — RPC mode', () => {
+  test('--mode rpc accepts get_state on stdin and returns JSONL', () => {
+    if (!PI_FOUND) test.skip();
+    const cp = require('node:child_process') as typeof import('node:child_process');
+    const piExe = piExecutable();
+    const result = cp.spawnSync(piExe, ['--mode', 'rpc'], {
+      input: JSON.stringify({ type: 'get_state' }) + '
+',
+      encoding: 'utf8',
+      timeout: 10_000,
+      cwd: PROJECT,
+    });
+    const lines = (result.stdout as string).split('
+').filter((l: string) => l.trim().length > 0);
+    const hasJsonl = lines.some((l: string) => {
+      try { return JSON.parse(l) !== null; } catch { return false; }
+    });
+    expect(hasJsonl).toBe(true);
+  });
+});
+
 // ─── 5 · CLI flags — thinking levels ────────────────────────────────────────
 
 test.describe('CLI flags — thinking levels', () => {

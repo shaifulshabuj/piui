@@ -76,7 +76,7 @@ test.beforeEach(async ({ page }) => {
 // ─── RPC — sendPrompt ───────────────────────────────────────────────────────
 
 test.describe('RPC — sendPrompt', () => {
-  test('typing a message and pressing Enter dispatches a prompt command', async ({ page }) => {
+  test('typing a message and pressing Ctrl+Enter dispatches a prompt command', async ({ page }) => {
     await injectPiSpy(page);
     await page.goto('/');
     await expect(page.locator('textarea').first()).toBeVisible({ timeout: 5000 });
