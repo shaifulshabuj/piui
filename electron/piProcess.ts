@@ -6,7 +6,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import type { BrowserWindow } from 'electron'
 
-function isExecutable(p: string): boolean {
+export function isExecutable(p: string): boolean {
   try {
     fs.accessSync(p, fs.constants.X_OK)
     return true
@@ -15,7 +15,7 @@ function isExecutable(p: string): boolean {
   }
 }
 
-function discoverNvmBins(nvmDir: string): readonly string[] {
+export function discoverNvmBins(nvmDir: string): readonly string[] {
   const versionsDir = path.join(nvmDir, 'versions', 'node')
   try {
     return fs.readdirSync(versionsDir).map(
@@ -26,8 +26,9 @@ function discoverNvmBins(nvmDir: string): readonly string[] {
   }
 }
 
-function findViaNvmShell(home: string, nvmDir: string): string | null {
+export function findViaNvmShell(home: string, nvmDir: string): string | null {
   const nvmSh = path.join(nvmDir, 'nvm.sh')
+  if (nvmSh.includes("'")) return null
   // Single-quote the source command to prevent word-splitting on paths with spaces.
   const cmd = `. '${nvmSh}' 2>/dev/null && command -v pi`
 

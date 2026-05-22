@@ -2,62 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import * as childProcess from 'child_process'
-
-// ---------------------------------------------------------------------------
-// We test the pure helper functions by extracting them via dynamic import of
-// the module under test.  Because the helpers are module-private, we use a
-// thin wrapper approach: replicate each helper locally with identical logic
-// so tests remain deterministic without spawning real shells.
-//
-// For findPiBinary integration we rely on the exported PiProcessManager as a
-// proxy (it calls findPiBinary internally) but the path resolution logic is
-// tested via the helpers below.
-// ---------------------------------------------------------------------------
-
-// --- Replicate helpers locally for unit testing ---
-
-function isExecutable(p: string): boolean {
-  try {
-    fs.accessSync(p, fs.constants.X_OK)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function discoverNvmBins(nvmDir: string): readonly string[] {
-  const versionsDir = path.join(nvmDir, 'versions', 'node')
-  try {
-    return fs.readdirSync(versionsDir).map(
-      (v) => path.join(versionsDir, v, 'bin', 'pi')
-    )
-  } catch {
-    return []
-  }
-}
-
-function findViaNvmShell(home: string, nvmDir: string): string | null {
-  const nvmSh = path.join(nvmDir, 'nvm.sh')
-  const cmd = `. '${nvmSh}' 2>/dev/null && command -v pi`
-
-  for (const shell of ['/bin/zsh', '/bin/bash'] as const) {
-    try {
-      if (!isExecutable(shell)) continue
-      const result = childProcess.execSync(`${shell} -c '${cmd}'`, {
-        timeout: 3000,
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, HOME: home, NVM_DIR: nvmDir },
-      })
-      const p = result.trim()
-      if (p && isExecutable(p)) return p
-    } catch {
-      // shell unavailable or nvm.sh not found — try next
-    }
-  }
-  return null
-}
+import { isExecutable, discoverNvmBins, findViaNvmShell } from '../electron/piProcess'
 
 // ---------------------------------------------------------------------------
 // Temporary directory utilities
@@ -215,6 +160,12 @@ describe('findViaNvmShell', () => {
     const result = findViaNvmShell(os.homedir(), '/tmp/__nonexistent_nvmdir__')
     expect(result).toBeNull()
   })
+
+  it('returns null when nvmDir path contains a single quote (injection guard)', () => {
+    const maliciousDir = path.join(tmpDir, "nvm'injected")
+    const result = findViaNvmShell(os.homedir(), maliciousDir)
+    expect(result).toBeNull()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -223,14 +174,12 @@ describe('findViaNvmShell', () => {
 
 describe('findPiBinary (via PiProcessManager.start)', () => {
   it('returns null without throwing when no pi binary exists anywhere', async () => {
-    // We can verify this behaviour by importing the module and checking that
-    // start() completes without throwing even when no binary is found.
-    // We cannot easily stub os.homedir() here, but we can verify the manager
-    // starts gracefully (returns without throwing) in all environments.
     const { PiProcessManager } = await import('../electron/piProcess')
     const mgr = new PiProcessManager()
-    await expect(mgr.start()).resolves.not.toThrow()
-    // isAvailable() is false when no binary is found — OR true if developer has pi installed
+    await mgr.start()
+    if (!mgr.isAvailable()) {
+      expect(mgr.getBinaryPath()).toBeNull()
+    }
     expect(typeof mgr.isAvailable()).toBe('boolean')
   })
 })
